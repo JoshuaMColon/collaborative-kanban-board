@@ -1,6 +1,14 @@
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { BoardCard, BoardList, Collaborator, PresenceEntry } from "../types";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import type {
+  BoardCard,
+  BoardList,
+  Collaborator,
+  PresenceEntry,
+} from "../types";
 import { CardTicket } from "./CardTicket";
 
 export function ListColumn({
@@ -20,7 +28,7 @@ export function ListColumn({
   });
 
   return (
-    <div className="flex w-72 shrink-0 flex-col">
+    <div className="flex w-full shrink-0 flex-col lg:w-72">
       <div className="mb-2 flex items-center justify-between px-1">
         <h2 className="font-display text-sm font-semibold text-text-secondary">
           {list.title}
@@ -32,8 +40,10 @@ export function ListColumn({
 
       <div
         ref={setNodeRef}
-        className={`flex min-h-[120px] flex-1 flex-col gap-2 rounded-md border border-dashed p-2 transition-colors ${
-          isOver ? "border-signal-amber/60 bg-signal-amber/5" : "border-ink-border/60"
+        className={`flex min-h-[120px] flex-1 flex-col gap-2 rounded-lg border border-dashed p-2 transition-colors ${
+          isOver
+            ? "border-signal-amber/60 bg-signal-amber/5 shadow-inner"
+            : "border-ink-border/70 bg-ink-surface/70"
         }`}
       >
         <SortableContext
@@ -53,7 +63,9 @@ export function ListColumn({
                 key={card.id}
                 card={card}
                 assignee={
-                  card.assigneeId ? collaboratorsById.get(card.assigneeId) : undefined
+                  card.assigneeId
+                    ? collaboratorsById.get(card.assigneeId)
+                    : undefined
                 }
                 viewers={viewers}
               />

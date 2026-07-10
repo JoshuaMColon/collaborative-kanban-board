@@ -1,8 +1,8 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { BoardCard, Collaborator, PresenceEntry } from "../types";
-import { PriorityTag } from "./PriorityTag";
 import { PresenceAvatar } from "./PresenceAvatar";
+import { PriorityTag } from "./PriorityTag";
 
 export function CardTicket({
   card,
@@ -13,8 +13,14 @@ export function CardTicket({
   assignee?: Collaborator;
   viewers: (Collaborator & { presence: PresenceEntry })[];
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: card.id, data: { type: "card", card } });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: card.id, data: { type: "card", card } });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -27,7 +33,7 @@ export function CardTicket({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group relative cursor-grab select-none rounded-sm border border-ink-border bg-ink-surface pl-4 pr-3 py-3 shadow-sm transition-colors hover:border-ink-borderLight active:cursor-grabbing ${
+      className={`group relative cursor-grab select-none rounded-md border border-ink-border bg-ink-surface pl-4 pr-3 py-3 shadow-sm transition-colors hover:border-ink-borderLight active:cursor-grabbing ${
         isDragging ? "opacity-40" : "opacity-100"
       }`}
     >
@@ -42,7 +48,9 @@ export function CardTicket({
       </div>
 
       <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-[11px] text-text-muted">{card.code}</span>
+        <span className="font-mono text-[11px] text-text-muted">
+          {card.code}
+        </span>
         <PriorityTag priority={card.priority} />
       </div>
 

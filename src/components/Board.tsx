@@ -1,4 +1,3 @@
-import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -10,25 +9,34 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { Board as BoardType, BoardCard } from "../types";
+import { useMemo, useState } from "react";
 import { collaborators, presence } from "../data/mockData";
-import { PresenceBar } from "./PresenceBar";
-import { ListColumn } from "./ListColumn";
+import type { BoardCard, Board as BoardType } from "../types";
 import { CardTicket } from "./CardTicket";
+import { ListColumn } from "./ListColumn";
+import { PresenceBar } from "./PresenceBar";
 
-export function Board({ initialBoard }: { initialBoard: BoardType }) {
+export function Board({
+  initialBoard,
+  theme,
+  onToggleTheme,
+}: {
+  initialBoard: BoardType;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
+}) {
   const [board, setBoard] = useState(initialBoard);
   const [activeCard, setActiveCard] = useState<BoardCard | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
-    })
+    }),
   );
 
   const collaboratorsById = useMemo(
     () => new Map(collaborators.map((c) => [c.id, c])),
-    []
+    [],
   );
 
   const presenceByCard = useMemo(() => {
@@ -80,7 +88,7 @@ export function Board({ initialBoard }: { initialBoard: BoardType }) {
     setBoard((prev) => ({
       ...prev,
       cards: prev.cards.map((c) =>
-        c.id === activeId ? { ...c, listId: targetListId } : c
+        c.id === activeId ? { ...c, listId: targetListId } : c,
       ),
     }));
   }
@@ -122,11 +130,13 @@ export function Board({ initialBoard }: { initialBoard: BoardType }) {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-ink">
+    <div className="flex min-h-screen flex-col bg-ink text-text-primary transition-colors">
       <PresenceBar
         boardTitle={board.title}
         collaborators={collaborators}
         presence={presence}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
       />
 
       <DndContext
@@ -136,7 +146,7 @@ export function Board({ initialBoard }: { initialBoard: BoardType }) {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex flex-1 gap-4 overflow-x-auto px-6 py-5">
+        <div className="flex flex-1 flex-col gap-4 overflow-x-auto overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:items-start">
           {board.lists
             .sort((a, b) => a.order - b.order)
             .map((list) => (
@@ -152,7 +162,7 @@ export function Board({ initialBoard }: { initialBoard: BoardType }) {
 
         <DragOverlay>
           {activeCard ? (
-            <div className="w-72">
+            <div className="w-full max-w-[18rem] sm:w-72">
               <CardTicket card={activeCard} viewers={[]} />
             </div>
           ) : null}

@@ -1,27 +1,28 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
       colors: {
         ink: {
-          DEFAULT: "#10141C",
-          surface: "#171C26",
-          border: "#2A3140",
-          borderLight: "#3A4254",
+          DEFAULT: "var(--surface-bg)",
+          surface: "var(--surface-bg)",
+          border: "var(--border)",
+          borderLight: "var(--border-strong)",
         },
         signal: {
-          amber: "#FF8A3D",
-          amberDim: "#9C5A28",
+          amber: "var(--accent)",
+          amberDim: "var(--accent-soft)",
         },
         live: {
-          green: "#3DDC97",
-          greenDim: "#1F6B4C",
+          green: "var(--success)",
+          greenDim: "var(--success-soft)",
         },
         text: {
-          primary: "#E4E7EC",
-          secondary: "#8B93A7",
-          muted: "#5A6172",
+          primary: "var(--text-primary)",
+          secondary: "var(--text-secondary)",
+          muted: "var(--text-muted)",
         },
       },
       fontFamily: {
@@ -42,4 +43,4 @@ export default {
     },
   },
   plugins: [],
-}
+};

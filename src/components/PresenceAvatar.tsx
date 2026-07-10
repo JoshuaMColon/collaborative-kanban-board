@@ -24,15 +24,15 @@ export function PresenceAvatar({
         className={`relative flex ${dims} items-center justify-center rounded-full border-2 font-mono font-semibold text-ink`}
         style={{
           backgroundColor: collaborator.color,
-          borderColor: "#10141C",
+          borderColor: "var(--page-bg)",
         }}
       >
         {collaborator.initials}
       </div>
       {isActive && (
         <span
-          className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-ink"
-          style={{ backgroundColor: "#3DDC97" }}
+          className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2"
+          style={{ backgroundColor: "#3DDC97", borderColor: "var(--page-bg)" }}
           aria-hidden="true"
         />
       )}
