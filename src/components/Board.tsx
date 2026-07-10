@@ -10,34 +10,63 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useMemo, useState } from "react";
-import { collaborators, presence } from "../data/mockData";
-import type { BoardCard, Board as BoardType } from "../types";
+import { useAuthBootstrap } from "../hooks/useAuthBootstrap";
+import { useBoardData } from "../hooks/useBoardData";
+import { usePresence } from "../hooks/usePresence";
+import { identityFor } from "../lib/identity";
+import type { BoardCard, Collaborator } from "../types";
 import { CardTicket } from "./CardTicket";
 import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
 
+const ORDER_GAP = 1024; // spacing between fractional order values
+
 export function Board({
-  initialBoard,
+  boardId,
   theme,
   onToggleTheme,
 }: {
-  initialBoard: BoardType;
+  boardId: string;
   theme: "light" | "dark";
   onToggleTheme: () => void;
 }) {
-  const [board, setBoard] = useState(initialBoard);
+  const {
+    session,
+    loading: authLoading,
+    error: authError,
+  } = useAuthBootstrap();
+  const ready = !!session;
+
+  const { boardTitle, lists, cards, loading, error, moveCard } = useBoardData(
+    boardId,
+    ready,
+  );
+  const { presence } = usePresence(boardId, session?.user.id ?? null, ready);
+
+  // Transient override applied only during an active drag, so a card can
+  // visually jump to another list before the drop is committed to Supabase.
+  const [dragOverride, setDragOverride] = useState<{
+    cardId: string;
+    listId: string;
+  } | null>(null);
   const [activeCard, setActiveCard] = useState<BoardCard | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  const collaboratorsById = useMemo(
-    () => new Map(collaborators.map((c) => [c.id, c])),
-    [],
-  );
+  // We don't have a profiles table yet, so display identity (initials/color)
+  // is derived deterministically from the user id for anyone we see via
+  // Presence. Swap this for real profile data once that table exists.
+  const collaboratorsById = useMemo(() => {
+    const map = new Map<string, Collaborator>();
+    for (const p of presence) {
+      if (!map.has(p.collaboratorId)) {
+        map.set(p.collaboratorId, identityFor(p.collaboratorId));
+      }
+    }
+    return map;
+  }, [presence]);
 
   const presenceByCard = useMemo(() => {
     const map = new Map<string, typeof presence>();
@@ -48,27 +77,32 @@ export function Board({
       map.set(p.viewingCardId, list);
     }
     return map;
-  }, []);
+  }, [presence]);
+
+  const displayCards = useMemo(() => {
+    if (!dragOverride) return cards;
+    return cards.map((c) =>
+      c.id === dragOverride.cardId ? { ...c, listId: dragOverride.listId } : c,
+    );
+  }, [cards, dragOverride]);
 
   const cardsByList = useMemo(() => {
     const map = new Map<string, BoardCard[]>();
-    for (const list of board.lists) map.set(list.id, []);
-    for (const card of [...board.cards].sort((a, b) => a.order - b.order)) {
+    for (const list of lists) map.set(list.id, []);
+    for (const card of [...displayCards].sort((a, b) => a.order - b.order)) {
       map.get(card.listId)?.push(card);
     }
     return map;
-  }, [board]);
+  }, [lists, displayCards]);
 
   function findCard(id: string) {
-    return board.cards.find((c) => c.id === id) ?? null;
+    return cards.find((c) => c.id === id) ?? null;
   }
 
   function handleDragStart(event: DragStartEvent) {
     setActiveCard(findCard(String(event.active.id)));
   }
 
-  // Handles moving a card into a different list while dragging (before drop),
-  // so the UI reflows live instead of only snapping into place on release.
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event;
     if (!over) return;
@@ -80,60 +114,82 @@ export function Board({
     const activeCardData = findCard(activeId);
     if (!activeCardData) return;
 
-    const overIsList = board.lists.some((l) => l.id === overId);
+    const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
     const targetListId = overIsList ? overId : overCard?.listId;
-    if (!targetListId || targetListId === activeCardData.listId) return;
+    if (!targetListId) return;
 
-    setBoard((prev) => ({
-      ...prev,
-      cards: prev.cards.map((c) =>
-        c.id === activeId ? { ...c, listId: targetListId } : c,
-      ),
-    }));
+    const currentListId =
+      dragOverride?.cardId === activeId
+        ? dragOverride.listId
+        : activeCardData.listId;
+    if (targetListId === currentListId) return;
+
+    setDragOverride({ cardId: activeId, listId: targetListId });
   }
 
-  // Finalizes ordering within the destination list once the card is dropped.
-  function handleDragEnd(event: DragEndEvent) {
-    setActiveCard(null);
+  async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    setActiveCard(null);
+    setDragOverride(null);
     if (!over) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
+    const activeCardData = findCard(activeId);
+    if (!activeCardData) return;
 
-    setBoard((prev) => {
-      const activeCardData = prev.cards.find((c) => c.id === activeId);
-      if (!activeCardData) return prev;
+    const overIsList = lists.some((l) => l.id === overId);
+    const overCard = findCard(overId);
+    const targetListId = overIsList
+      ? overId
+      : (overCard?.listId ?? activeCardData.listId);
 
-      const overCard = prev.cards.find((c) => c.id === overId);
-      const targetListId = overCard?.listId ?? activeCardData.listId;
+    const siblings = cards
+      .filter((c) => c.listId === targetListId && c.id !== activeId)
+      .sort((a, b) => a.order - b.order);
 
-      const listCards = prev.cards
-        .filter((c) => c.listId === targetListId && c.id !== activeId)
-        .sort((a, b) => a.order - b.order);
+    const overIndex = overCard
+      ? siblings.findIndex((c) => c.id === overCard.id)
+      : siblings.length;
 
-      const overIndex = overCard
-        ? listCards.findIndex((c) => c.id === overCard.id)
-        : listCards.length;
+    const before = overIndex > 0 ? siblings[overIndex - 1] : null;
+    const after = overIndex < siblings.length ? siblings[overIndex] : null;
 
-      const reordered = [
-        ...listCards.slice(0, overIndex),
-        { ...activeCardData, listId: targetListId },
-        ...listCards.slice(overIndex),
-      ].map((c, i) => ({ ...c, order: i }));
+    let newOrder: number;
+    if (before && after) newOrder = (before.order + after.order) / 2;
+    else if (before) newOrder = before.order + ORDER_GAP;
+    else if (after) newOrder = after.order - ORDER_GAP;
+    else newOrder = 0;
 
-      const otherCards = prev.cards.filter((c) => c.listId !== targetListId);
+    await moveCard(activeId, targetListId, newOrder);
+  }
 
-      return { ...prev, cards: [...otherCards, ...reordered] };
-    });
+  if (authLoading || (ready && loading)) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-ink">
+        <p className="font-mono text-sm text-text-muted">
+          Connecting to board…
+        </p>
+      </div>
+    );
+  }
+
+  if (authError || error) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-ink px-6">
+        <p className="max-w-md text-center font-mono text-sm text-signal-amber">
+          {authError ?? error}
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-ink text-text-primary transition-colors">
+    <div className="flex h-screen flex-col bg-ink">
       <PresenceBar
-        boardTitle={board.title}
-        collaborators={collaborators}
+        boardTitle={boardTitle ?? "Untitled Board"}
+        collaborators={Array.from(collaboratorsById.values())}
         presence={presence}
         theme={theme}
         onToggleTheme={onToggleTheme}
@@ -146,8 +202,8 @@ export function Board({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex flex-1 flex-col gap-4 overflow-x-auto overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:items-start">
-          {board.lists
+        <div className="flex flex-1 gap-4 overflow-x-auto px-6 py-5">
+          {[...lists]
             .sort((a, b) => a.order - b.order)
             .map((list) => (
               <ListColumn
@@ -162,7 +218,7 @@ export function Board({
 
         <DragOverlay>
           {activeCard ? (
-            <div className="w-full max-w-[18rem] sm:w-72">
+            <div className="w-72">
               <CardTicket card={activeCard} viewers={[]} />
             </div>
           ) : null}
