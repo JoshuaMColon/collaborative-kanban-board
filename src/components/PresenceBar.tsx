@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { Collaborator, PresenceEntry } from "../types";
 import { PresenceAvatar } from "./PresenceAvatar";
 
@@ -7,25 +8,53 @@ export function PresenceBar({
   presence,
   theme,
   onToggleTheme,
+  onRenameBoard,
 }: {
   boardTitle: string;
   collaborators: Collaborator[];
   presence: PresenceEntry[];
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onRenameBoard: (title: string) => Promise<void>;
 }) {
   const activeIds = new Set(presence.map((p) => p.collaboratorId));
+  const [draftTitle, setDraftTitle] = useState(boardTitle);
+
+  useEffect(() => {
+    setDraftTitle(boardTitle);
+  }, [boardTitle]);
+
+  async function commitTitle() {
+    const trimmed = draftTitle.trim();
+    const nextTitle = trimmed || "Untitled Board";
+    setDraftTitle(nextTitle);
+    await onRenameBoard(nextTitle);
+  }
 
   return (
     <header className="border-b border-ink-border bg-ink-surface px-4 py-4 sm:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-widest text-text-muted">
-            Manifest Board
+            Collaborative Kanban Board
           </p>
-          <h1 className="mt-0.5 font-display text-xl font-semibold tracking-tight text-text-primary">
-            {boardTitle}
-          </h1>
+          <input
+            aria-label="Board title"
+            value={draftTitle}
+            onChange={(event) => setDraftTitle(event.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void commitTitle();
+              }
+              if (event.key === "Escape") {
+                setDraftTitle(boardTitle);
+              }
+            }}
+            className="mt-0.5 w-full max-w-xl border-none bg-transparent font-display text-xl font-semibold tracking-tight text-text-primary outline-none placeholder:text-text-muted"
+            placeholder="Untitled Board"
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">

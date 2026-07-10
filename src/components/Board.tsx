@@ -37,10 +37,15 @@ export function Board({
   } = useAuthBootstrap();
   const ready = !!session;
 
-  const { boardTitle, lists, cards, loading, error, moveCard } = useBoardData(
-    boardId,
-    ready,
-  );
+  const {
+    boardTitle,
+    lists,
+    cards,
+    loading,
+    error,
+    moveCard,
+    updateBoardTitle,
+  } = useBoardData(boardId, ready);
   const { presence } = usePresence(boardId, session?.user.id ?? null, ready);
 
   // Transient override applied only during an active drag, so a card can
@@ -193,6 +198,7 @@ export function Board({
         presence={presence}
         theme={theme}
         onToggleTheme={onToggleTheme}
+        onRenameBoard={updateBoardTitle}
       />
 
       <DndContext

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
 import { mapDbCard, mapDbList, type DbCard, type DbList } from "../lib/mappers";
+import { supabase } from "../lib/supabase";
 import type { BoardCard, BoardList } from "../types";
 
 interface UseBoardDataResult {
@@ -11,9 +11,14 @@ interface UseBoardDataResult {
   error: string | null;
   /** Optimistically applies a local move, then persists it to Supabase. */
   moveCard: (cardId: string, listId: string, order: number) => Promise<void>;
+  /** Persists an updated board title and reflects it locally. */
+  updateBoardTitle: (title: string) => Promise<void>;
 }
 
-export function useBoardData(boardId: string, ready: boolean): UseBoardDataResult {
+export function useBoardData(
+  boardId: string,
+  ready: boolean,
+): UseBoardDataResult {
   const [boardTitle, setBoardTitle] = useState<string | null>(null);
   const [lists, setLists] = useState<BoardList[]>([]);
   const [cards, setCards] = useState<BoardCard[]>([]);
@@ -55,10 +60,17 @@ export function useBoardData(boardId: string, ready: boolean): UseBoardDataResul
       .channel(`board-${boardId}-data`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "cards", filter: `board_id=eq.${boardId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "cards",
+          filter: `board_id=eq.${boardId}`,
+        },
         (payload) => {
           if (payload.eventType === "DELETE") {
-            setCards((prev) => prev.filter((c) => c.id !== (payload.old as DbCard).id));
+            setCards((prev) =>
+              prev.filter((c) => c.id !== (payload.old as DbCard).id),
+            );
             return;
           }
           const updated = mapDbCard(payload.new as DbCard);
@@ -68,14 +80,21 @@ export function useBoardData(boardId: string, ready: boolean): UseBoardDataResul
               ? prev.map((c) => (c.id === updated.id ? updated : c))
               : [...prev, updated];
           });
-        }
+        },
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "lists", filter: `board_id=eq.${boardId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "lists",
+          filter: `board_id=eq.${boardId}`,
+        },
         (payload) => {
           if (payload.eventType === "DELETE") {
-            setLists((prev) => prev.filter((l) => l.id !== (payload.old as DbList).id));
+            setLists((prev) =>
+              prev.filter((l) => l.id !== (payload.old as DbList).id),
+            );
             return;
           }
           const updated = mapDbList(payload.new as DbList);
@@ -85,7 +104,7 @@ export function useBoardData(boardId: string, ready: boolean): UseBoardDataResul
               ? prev.map((l) => (l.id === updated.id ? updated : l))
               : [...prev, updated];
           });
-        }
+        },
       )
       .subscribe();
 
@@ -98,7 +117,7 @@ export function useBoardData(boardId: string, ready: boolean): UseBoardDataResul
     async (cardId: string, listId: string, order: number) => {
       // Optimistic local update — Realtime echo of our own write is a harmless no-op.
       setCards((prev) =>
-        prev.map((c) => (c.id === cardId ? { ...c, listId, order } : c))
+        prev.map((c) => (c.id === cardId ? { ...c, listId, order } : c)),
       );
 
       const { error: updateError } = await supabase
@@ -112,8 +131,34 @@ export function useBoardData(boardId: string, ready: boolean): UseBoardDataResul
         fetchAll();
       }
     },
-    [fetchAll]
+    [fetchAll],
   );
 
-  return { boardTitle, lists, cards, loading, error, moveCard };
+  const updateBoardTitle = useCallback(
+    async (title: string) => {
+      const nextTitle = title.trim() || "Untitled Board";
+      setBoardTitle(nextTitle);
+
+      const { error: updateError } = await supabase
+        .from("boards")
+        .update({ title: nextTitle })
+        .eq("id", boardId);
+
+      if (updateError) {
+        setError(updateError.message);
+        fetchAll();
+      }
+    },
+    [boardId, fetchAll],
+  );
+
+  return {
+    boardTitle,
+    lists,
+    cards,
+    loading,
+    error,
+    moveCard,
+    updateBoardTitle,
+  };
 }
