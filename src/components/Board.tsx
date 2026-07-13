@@ -3,11 +3,13 @@ import {
   DragOverlay,
   PointerSensor,
   closestCorners,
+  pointerWithin,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type CollisionDetection,
 } from "@dnd-kit/core";
 import { useMemo, useState } from "react";
 import { useAuthBootstrap } from "../hooks/useAuthBootstrap";
@@ -36,6 +38,12 @@ export function Board({
     error: authError,
   } = useAuthBootstrap();
   const ready = !!session;
+
+  const collisionDetectionStrategy: CollisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) return pointerCollisions;
+    return closestCorners(args);
+  };
 
   const {
     boardTitle,
@@ -213,7 +221,7 @@ export function Board({
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={collisionDetectionStrategy}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
