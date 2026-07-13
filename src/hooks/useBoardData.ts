@@ -120,14 +120,26 @@ export function useBoardData(
         prev.map((c) => (c.id === cardId ? { ...c, listId, order } : c)),
       );
 
-      const { error: updateError } = await supabase
+      // .select() forces PostgREST to return the affected row(s), so we can
+      // tell "0 rows matched" (often an RLS block) part from a real success -
+      // a plain .update() return 204 either way and hides the difference.
+      const { data, error: updateError } = await supabase
         .from("cards")
         .update({ list_id: listId, order })
-        .eq("id", cardId);
+        .eq("id", cardId)
+        .select();
 
       if (updateError) {
         setError(updateError.message);
         // Re-sync from source of truth if the write failed.
+        fetchAll();
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setError(
+          "Card update matched 0 rows - likely blocked by an RLS policy on cards (UPDATE).",
+        );
         fetchAll();
       }
     },

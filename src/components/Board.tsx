@@ -121,7 +121,16 @@ export function Board({
 
     const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
-    const targetListId = overIsList ? overId : overCard?.listId;
+
+    // Prefer the list already established during the drag (handleDragOver) -
+    // by drop time, "over" can resolve to the dragged card's own new position,
+    // which would otherwise incorrectly report the card's original list.
+    const targetListId = 
+      dragOverride?.cardId === activeId
+        ? dragOverride.listId
+        : overIsList 
+          ? overId 
+            : (overCard?.listId ?? activeCardData.listId);
     if (!targetListId) return;
 
     const currentListId =
@@ -154,7 +163,8 @@ export function Board({
       .filter((c) => c.listId === targetListId && c.id !== activeId)
       .sort((a, b) => a.order - b.order);
 
-    const overIndex = overCard
+    const overIndex = 
+      overCard && overCard.id !== activeId && overCard.listId === targetListId
       ? siblings.findIndex((c) => c.id === overCard.id)
       : siblings.length;
 
