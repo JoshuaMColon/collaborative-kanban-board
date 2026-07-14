@@ -1,17 +1,18 @@
 import {
   DndContext,
   DragOverlay,
+  getFirstCollision,
   PointerSensor,
-  closestCorners,
   pointerWithin,
+  rectIntersection,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
-  type CollisionDetection,
 } from "@dnd-kit/core";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAuthBootstrap } from "../hooks/useAuthBootstrap";
 import { useBoardData } from "../hooks/useBoardData";
 import { usePresence } from "../hooks/usePresence";
@@ -22,6 +23,33 @@ import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
 
 const ORDER_GAP = 1024; // spacing between fractional order values
+
+// Prefers whatever the pointer is literally inside; if the pointer is
+// momentarily between droppables (e.g. crossing a gap), holds onto the last
+// known valid target instead of flickering to the wrong container.
+
+function useStableCollisionDetection() {
+  const lastOverId = useRef<string | null>(null);
+
+  const strategy: CollisionDetection = useCallback((args) => {
+    const pointerIntersections = pointerWithin(args);
+    const intersections =
+      pointerIntersections.length > 0
+        ? pointerIntersections
+        : rectIntersection(args);
+
+    const overId = getFirstCollision(intersections, "id");
+
+    if (overId != null) {
+      lastOverId.current = String(overId);
+      return [{ id: overId }];
+    }
+
+    return lastOverId.current ? [{ id: lastOverId.current }] : [];
+  }, []);
+
+  return strategy;
+}
 
 export function Board({
   boardId,
@@ -39,11 +67,7 @@ export function Board({
   } = useAuthBootstrap();
   const ready = !!session;
 
-  const collisionDetectionStrategy: CollisionDetection = (args) => {
-    const pointerCollisions = pointerWithin(args);
-    if (pointerCollisions.length > 0) return pointerCollisions;
-    return closestCorners(args);
-  };
+  const collisionDetectionStrategy = useStableCollisionDetection();
 
   const {
     boardTitle,
@@ -130,15 +154,15 @@ export function Board({
     const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
 
-    // Prefer the list already established during the drag (handleDragOver) -
-    // by drop time, "over" can resolve to the dragged card's own new position,
-    // which would otherwise incorrectly report the card's original list.
-    const targetListId = 
+    // Prefer the list already established during the drag — by drop time,
+    // "over" can resolve to the dragged card's own new position, which would
+    // otherwise incorrectly report the card's original list.
+    const targetListId =
       dragOverride?.cardId === activeId
         ? dragOverride.listId
-        : overIsList 
-          ? overId 
-            : (overCard?.listId ?? activeCardData.listId);
+        : overIsList
+          ? overId
+          : (overCard?.listId ?? activeCardData.listId);
     if (!targetListId) return;
 
     const currentListId =
@@ -163,18 +187,25 @@ export function Board({
 
     const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
-    const targetListId = overIsList
-      ? overId
-      : (overCard?.listId ?? activeCardData.listId);
+
+    // Same rule as handleDragOver: trust the list already established during
+    // the drag rather than re-deriving it from a possibly self-referential
+    // drop target.
+    const targetListId =
+      dragOverride?.cardId === activeId
+        ? dragOverride.listId
+        : overIsList
+          ? overId
+          : (overCard?.listId ?? activeCardData.listId);
 
     const siblings = cards
       .filter((c) => c.listId === targetListId && c.id !== activeId)
       .sort((a, b) => a.order - b.order);
 
-    const overIndex = 
+    const overIndex =
       overCard && overCard.id !== activeId && overCard.listId === targetListId
-      ? siblings.findIndex((c) => c.id === overCard.id)
-      : siblings.length;
+        ? siblings.findIndex((c) => c.id === overCard.id)
+        : siblings.length;
 
     const before = overIndex > 0 ? siblings[overIndex - 1] : null;
     const after = overIndex < siblings.length ? siblings[overIndex] : null;
