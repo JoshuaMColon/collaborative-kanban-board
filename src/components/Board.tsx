@@ -1,16 +1,16 @@
 import {
   DndContext,
   DragOverlay,
-  getFirstCollision,
   PointerSensor,
   pointerWithin,
   rectIntersection,
+  getFirstCollision,
   useSensor,
   useSensors,
-  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type CollisionDetection,
 } from "@dnd-kit/core";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useAuthBootstrap } from "../hooks/useAuthBootstrap";
@@ -18,6 +18,7 @@ import { useBoardData } from "../hooks/useBoardData";
 import { usePresence } from "../hooks/usePresence";
 import { identityFor } from "../lib/identity";
 import type { BoardCard, Collaborator } from "../types";
+import { CardModal } from "./CardModal";
 import { CardTicket } from "./CardTicket";
 import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
@@ -27,7 +28,6 @@ const ORDER_GAP = 1024; // spacing between fractional order values
 // Prefers whatever the pointer is literally inside; if the pointer is
 // momentarily between droppables (e.g. crossing a gap), holds onto the last
 // known valid target instead of flickering to the wrong container.
-
 function useStableCollisionDetection() {
   const lastOverId = useRef<string | null>(null);
 
@@ -77,6 +77,11 @@ export function Board({
     error,
     moveCard,
     updateBoardTitle,
+    createCard,
+    updateCard,
+    deleteCard,
+    createList,
+    deleteList,
   } = useBoardData(boardId, ready);
   const { presence } = usePresence(boardId, session?.user.id ?? null, ready);
 
@@ -87,6 +92,9 @@ export function Board({
     listId: string;
   } | null>(null);
   const [activeCard, setActiveCard] = useState<BoardCard | null>(null);
+  const [editingCard, setEditingCard] = useState<BoardCard | null>(null);
+  const [isAddingList, setIsAddingList] = useState(false);
+  const [newListTitle, setNewListTitle] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -154,9 +162,6 @@ export function Board({
     const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
 
-    // Prefer the list already established during the drag — by drop time,
-    // "over" can resolve to the dragged card's own new position, which would
-    // otherwise incorrectly report the card's original list.
     const targetListId =
       dragOverride?.cardId === activeId
         ? dragOverride.listId
@@ -188,9 +193,6 @@ export function Board({
     const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
 
-    // Same rule as handleDragOver: trust the list already established during
-    // the drag rather than re-deriving it from a possibly self-referential
-    // drop target.
     const targetListId =
       dragOverride?.cardId === activeId
         ? dragOverride.listId
@@ -217,6 +219,18 @@ export function Board({
     else newOrder = 0;
 
     await moveCard(activeId, targetListId, newOrder);
+  }
+
+  async function submitNewList() {
+    const trimmed = newListTitle.trim();
+    if (!trimmed) {
+      setIsAddingList(false);
+      setNewListTitle("");
+      return;
+    }
+    await createList(trimmed);
+    setNewListTitle("");
+    setIsAddingList(false);
   }
 
   if (authLoading || (ready && loading)) {
@@ -257,7 +271,7 @@ export function Board({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex flex-1 gap-4 overflow-x-auto px-6 py-5">
+        <div className="flex flex-1 items-start gap-4 overflow-x-auto px-6 py-5">
           {[...lists]
             .sort((a, b) => a.order - b.order)
             .map((list) => (
@@ -267,8 +281,63 @@ export function Board({
                 cards={cardsByList.get(list.id) ?? []}
                 collaboratorsById={collaboratorsById}
                 presenceByCard={presenceByCard}
+                onOpenCard={setEditingCard}
+                onAddCard={createCard}
+                onDeleteList={deleteList}
               />
             ))}
+
+          <div className="w-full shrink-0 lg:w-72">
+            {isAddingList ? (
+              <div className="rounded-lg border border-ink-border bg-ink-surface p-2">
+                <input
+                  autoFocus
+                  value={newListTitle}
+                  onChange={(e) => setNewListTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void submitNewList();
+                    }
+                    if (e.key === "Escape") {
+                      setIsAddingList(false);
+                      setNewListTitle("");
+                    }
+                  }}
+                  placeholder="List title…"
+                  className="w-full border-none bg-transparent font-display text-sm font-semibold text-text-primary outline-none placeholder:text-text-muted"
+                />
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={submitNewList}
+                    disabled={!newListTitle.trim()}
+                    className="rounded-sm bg-signal-amber px-2.5 py-1 font-mono text-[11px] font-semibold text-ink disabled:opacity-50"
+                  >
+                    Add list
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingList(false);
+                      setNewListTitle("");
+                    }}
+                    className="rounded-sm px-2.5 py-1 font-mono text-[11px] text-text-muted hover:text-text-primary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAddingList(true)}
+                className="w-full rounded-lg border border-dashed border-ink-border/70 px-3 py-3 text-left font-mono text-[11px] text-text-muted transition hover:border-signal-amber/40 hover:text-signal-amber"
+              >
+                + Add list
+              </button>
+            )}
+          </div>
         </div>
 
         <DragOverlay>
@@ -279,6 +348,15 @@ export function Board({
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {editingCard && (
+        <CardModal
+          card={editingCard}
+          onClose={() => setEditingCard(null)}
+          onSave={(updates) => updateCard(editingCard.id, updates)}
+          onDelete={() => deleteCard(editingCard.id)}
+        />
+      )}
     </div>
   );
 }

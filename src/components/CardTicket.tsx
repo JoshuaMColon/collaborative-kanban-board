@@ -8,10 +8,12 @@ export function CardTicket({
   card,
   assignee,
   viewers,
+  onOpen,
 }: {
   card: BoardCard;
   assignee?: Collaborator;
   viewers: (Collaborator & { presence: PresenceEntry })[];
+  onOpen?: (card: BoardCard) => void;
 }) {
   const {
     attributes,
@@ -33,11 +35,11 @@ export function CardTicket({
       style={style}
       {...attributes}
       {...listeners}
+      onClick={() => onOpen?.(card)}
       className={`group relative cursor-grab select-none rounded-md border border-ink-border bg-ink-surface pl-4 pr-3 py-3 shadow-sm transition-colors hover:border-ink-borderLight active:cursor-grabbing ${
         isDragging ? "opacity-40" : "opacity-100"
       }`}
     >
-      {/* perforated left edge — the ticket-stub signature */}
       <div
         className="absolute left-1.5 top-0 bottom-0 flex flex-col justify-evenly"
         aria-hidden="true"

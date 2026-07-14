@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { mapDbCard, mapDbList, type DbCard, type DbList } from "../lib/mappers";
 import { supabase } from "../lib/supabase";
-import type { BoardCard, BoardList } from "../types";
+import type { BoardCard, BoardList, CardPriority } from "../types";
+
+const ORDER_GAP = 1024;
 
 interface UseBoardDataResult {
   boardTitle: string | null;
@@ -9,10 +11,28 @@ interface UseBoardDataResult {
   cards: BoardCard[];
   loading: boolean;
   error: string | null;
-  /** Optimistically applies a local move, then persists it to Supabase. */
   moveCard: (cardId: string, listId: string, order: number) => Promise<void>;
-  /** Persists an updated board title and reflects it locally. */
   updateBoardTitle: (title: string) => Promise<void>;
+  createCard: (listId: string, title: string) => Promise<void>;
+  updateCard: (
+    cardId: string,
+    updates: Partial<Pick<BoardCard, "title" | "description" | "priority">>,
+  ) => Promise<void>;
+  deleteCard: (cardId: string) => Promise<void>;
+  createList: (title: string) => Promise<void>;
+  deleteList: (listId: string) => Promise<void>;
+}
+
+function nextCardCode(existingCards: BoardCard[]): string {
+  let max = 0;
+  for (const c of existingCards) {
+    const match = /^MAN-(\d+)$/.exec(c.code);
+    if (match) {
+      const n = parseInt(match[1], 10);
+      if (n > max) max = n;
+    }
+  }
+  return `MAN-${String(max + 1).padStart(3, "0")}`;
 }
 
 export function useBoardData(
@@ -115,14 +135,10 @@ export function useBoardData(
 
   const moveCard = useCallback(
     async (cardId: string, listId: string, order: number) => {
-      // Optimistic local update — Realtime echo of our own write is a harmless no-op.
       setCards((prev) =>
         prev.map((c) => (c.id === cardId ? { ...c, listId, order } : c)),
       );
 
-      // .select() forces PostgREST to return the affected row(s), so we can
-      // tell "0 rows matched" (often an RLS block) part from a real success -
-      // a plain .update() return 204 either way and hides the difference.
       const { data, error: updateError } = await supabase
         .from("cards")
         .update({ list_id: listId, order })
@@ -131,14 +147,13 @@ export function useBoardData(
 
       if (updateError) {
         setError(updateError.message);
-        // Re-sync from source of truth if the write failed.
         fetchAll();
         return;
       }
 
       if (!data || data.length === 0) {
         setError(
-          "Card update matched 0 rows - likely blocked by an RLS policy on cards (UPDATE).",
+          "Card update matched 0 rows — likely blocked by an RLS policy on cards (UPDATE).",
         );
         fetchAll();
       }
@@ -164,6 +179,147 @@ export function useBoardData(
     [boardId, fetchAll],
   );
 
+  const createCard = useCallback(
+    async (listId: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+
+      const siblingsInList = cards.filter((c) => c.listId === listId);
+      const maxOrder = siblingsInList.length
+        ? Math.max(...siblingsInList.map((c) => c.order))
+        : -ORDER_GAP;
+      const order = maxOrder + ORDER_GAP;
+      const code = nextCardCode(cards);
+
+      const { data, error: insertError } = await supabase
+        .from("cards")
+        .insert({
+          code,
+          title: trimmed,
+          priority: "standard" as CardPriority,
+          list_id: listId,
+          board_id: boardId,
+          order,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
+      if (data) {
+        const mapped = mapDbCard(data as DbCard);
+        setCards((prev) =>
+          prev.some((c) => c.id === mapped.id) ? prev : [...prev, mapped],
+        );
+      }
+    },
+    [cards, boardId],
+  );
+
+  const updateCard = useCallback(
+    async (
+      cardId: string,
+      updates: Partial<Pick<BoardCard, "title" | "description" | "priority">>,
+    ) => {
+      setCards((prev) =>
+        prev.map((c) => (c.id === cardId ? { ...c, ...updates } : c)),
+      );
+
+      const { data, error: updateError } = await supabase
+        .from("cards")
+        .update(updates)
+        .eq("id", cardId)
+        .select();
+
+      if (updateError) {
+        setError(updateError.message);
+        fetchAll();
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setError(
+          "Card update matched 0 rows — likely blocked by an RLS policy on cards (UPDATE).",
+        );
+        fetchAll();
+      }
+    },
+    [fetchAll],
+  );
+
+  const deleteCard = useCallback(
+    async (cardId: string) => {
+      const previous = cards;
+      setCards((prev) => prev.filter((c) => c.id !== cardId));
+
+      const { error: deleteError } = await supabase
+        .from("cards")
+        .delete()
+        .eq("id", cardId);
+
+      if (deleteError) {
+        setError(deleteError.message);
+        setCards(previous);
+      }
+    },
+    [cards],
+  );
+
+  const createList = useCallback(
+    async (title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+
+      const maxOrder = lists.length
+        ? Math.max(...lists.map((l) => l.order))
+        : -1;
+      const order = maxOrder + 1;
+
+      const { data, error: insertError } = await supabase
+        .from("lists")
+        .insert({ title: trimmed, board_id: boardId, order })
+        .select()
+        .single();
+
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
+      if (data) {
+        const mapped = mapDbList(data as DbList);
+        setLists((prev) =>
+          prev.some((l) => l.id === mapped.id) ? prev : [...prev, mapped],
+        );
+      }
+    },
+    [lists, boardId],
+  );
+
+  const deleteList = useCallback(
+    async (listId: string) => {
+      const previousLists = lists;
+      const previousCards = cards;
+      setLists((prev) => prev.filter((l) => l.id !== listId));
+      setCards((prev) => prev.filter((c) => c.listId !== listId));
+
+      const { error: deleteError } = await supabase
+        .from("lists")
+        .delete()
+        .eq("id", listId);
+
+      if (deleteError) {
+        setError(deleteError.message);
+        setLists(previousLists);
+        setCards(previousCards);
+      }
+    },
+    [lists, cards],
+  );
+
   return {
     boardTitle,
     lists,
@@ -172,5 +328,10 @@ export function useBoardData(
     error,
     moveCard,
     updateBoardTitle,
+    createCard,
+    updateCard,
+    deleteCard,
+    createList,
+    deleteList,
   };
 }
