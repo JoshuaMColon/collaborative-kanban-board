@@ -61,6 +61,7 @@ function App() {
         setTheme((current) => (current === "dark" ? "light" : "dark"))
       }
       userId={session.user.id}
+      userEmail={session.user.email ?? null}
       onSignOut={signOut}
     />
   );

@@ -47,6 +47,7 @@ export interface Board {
  */
 export interface PresenceEntry {
   collaboratorId: string;
+  email?: string;
   viewingCardId?: string;
   lastActiveAt: string;
 }

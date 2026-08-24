@@ -55,12 +55,14 @@ export function Board({
   theme,
   onToggleTheme,
   userId,
+  userEmail,
   onSignOut,
 }: {
   boardId: string;
   theme: "light" | "dark";
   onToggleTheme: () => void;
   userId: string;
+  userEmail: string | null;
   onSignOut: () => Promise<void>;
 }) {
   // App only ever renders <Board> once a real session exists (see App.tsx),
@@ -83,7 +85,7 @@ export function Board({
     createList,
     deleteList,
   } = useBoardData(boardId, ready);
-  const { presence } = usePresence(boardId, userId, ready);
+  const { presence } = usePresence(boardId, userId, userEmail, ready);
 
   // Transient override applied only during an active drag, so a card can
   // visually jump to another list before the drop is committed to Supabase.
@@ -107,7 +109,7 @@ export function Board({
     const map = new Map<string, Collaborator>();
     for (const p of presence) {
       if (!map.has(p.collaboratorId)) {
-        map.set(p.collaboratorId, identityFor(p.collaboratorId));
+        map.set(p.collaboratorId, identityFor(p.collaboratorId, p.email));
       }
     }
     return map;

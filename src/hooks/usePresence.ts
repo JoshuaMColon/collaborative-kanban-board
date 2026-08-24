@@ -4,6 +4,7 @@ import type { PresenceEntry } from "../types";
 
 interface TrackedState {
   userId: string;
+  email: string | null;
   viewingCardId?: string;
   lastActiveAt: string;
 }
@@ -13,7 +14,12 @@ interface TrackedState {
  * currently connected. viewingCardId can be updated later (e.g. on card
  * hover/focus) via the returned setViewingCard function.
  */
-export function usePresence(boardId: string, userId: string | null, ready: boolean) {
+export function usePresence(
+  boardId: string,
+  userId: string | null,
+  email: string | null,
+  ready: boolean,
+) {
   const [entries, setEntries] = useState<PresenceEntry[]>([]);
   const [viewingCardId, setViewingCardId] = useState<string | undefined>(undefined);
 
@@ -31,6 +37,7 @@ export function usePresence(boardId: string, userId: string | null, ready: boole
           .flat()
           .map((entry) => ({
             collaboratorId: entry.userId,
+            email: entry.email ?? undefined,
             viewingCardId: entry.viewingCardId,
             lastActiveAt: entry.lastActiveAt,
           }));
@@ -40,6 +47,7 @@ export function usePresence(boardId: string, userId: string | null, ready: boole
         if (status === "SUBSCRIBED") {
           await channel.track({
             userId,
+            email,
             viewingCardId,
             lastActiveAt: new Date().toISOString(),
           } satisfies TrackedState);
@@ -53,7 +61,7 @@ export function usePresence(boardId: string, userId: string | null, ready: boole
     // the separate effect below so we don't tear down/rebuild the channel
     // every time the user hovers a different card.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, userId, boardId]);
+  }, [ready, userId, email, boardId]);
 
   return { presence: entries, setViewingCard: setViewingCardId };
 }

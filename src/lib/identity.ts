@@ -11,21 +11,40 @@ function hashString(input: string): number {
   return Math.abs(hash);
 }
 
+function initialsFromEmail(email: string): string {
+  const local = email.split("@")[0];
+  const parts = local.split(/[._-]/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return local.slice(0, 2).toUpperCase();
+}
+
 /**
- * TEMPORARY: there's no profiles table yet, so we can't show a real name.
- * This derives a stable initials/color pair from the user id so the same
- * person always renders the same way. Replace with real profile data
- * (display_name, avatar_color columns) once that table exists.
+ * Builds a stable identity (name/initials/color) for a user.
+ *
+ * If `email` is known (e.g. for the current signed-in user, or once a
+ * profiles table exists and presence broadcasts email), it's used directly.
+ * Otherwise this falls back to a placeholder derived from the user id, since
+ * Presence payloads from OTHER users only carry their id today.
  */
-export function identityFor(userId: string): Collaborator {
+export function identityFor(userId: string, email?: string | null): Collaborator {
   const hash = hashString(userId);
-  const initials = userId.slice(0, 2).toUpperCase();
   const color = PALETTE[hash % PALETTE.length];
+
+  if (email) {
+    return {
+      id: userId,
+      name: email,
+      initials: initialsFromEmail(email),
+      color,
+    };
+  }
 
   return {
     id: userId,
     name: `User ${userId.slice(0, 6)}`,
-    initials,
+    initials: userId.slice(0, 2).toUpperCase(),
     color,
   };
 }
