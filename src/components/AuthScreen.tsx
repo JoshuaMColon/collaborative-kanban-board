@@ -26,7 +26,9 @@ export function AuthScreen({
         : await onSignUp(email, password);
 
     if (ok && mode === "signup") {
-      setNotice("Account created. Check your email if confirmation is required.");
+      setNotice(
+        "Account created. Check your email if confirmation is required.",
+      );
     }
 
     setSubmitting(false);
@@ -42,7 +44,7 @@ export function AuthScreen({
           {mode === "signin" ? "Sign in" : "Create account"}
         </h1>
         <p className="mb-5 font-mono text-[11px] text-text-muted">
-          Manifest Board
+          Collaborative Board
         </p>
 
         <label className="mb-3 block">
@@ -67,7 +69,9 @@ export function AuthScreen({
             type="password"
             required
             minLength={6}
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            autoComplete={
+              mode === "signin" ? "current-password" : "new-password"
+            }
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-sm border border-ink-border bg-ink px-3 py-2 text-sm text-text-primary outline-none focus:border-signal-amber/60"
@@ -75,7 +79,9 @@ export function AuthScreen({
         </label>
 
         {error && (
-          <p className="mb-3 font-mono text-[11px] text-signal-amber">{error}</p>
+          <p className="mb-3 font-mono text-[11px] text-signal-amber">
+            {error}
+          </p>
         )}
         {notice && (
           <p className="mb-3 font-mono text-[11px] text-live-green">{notice}</p>
