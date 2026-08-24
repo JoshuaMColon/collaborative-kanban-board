@@ -9,6 +9,7 @@ export function PresenceBar({
   theme,
   onToggleTheme,
   onRenameBoard,
+  onSignOut,
 }: {
   boardTitle: string;
   collaborators: Collaborator[];
@@ -16,6 +17,7 @@ export function PresenceBar({
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onRenameBoard: (title: string) => Promise<void>;
+  onSignOut: () => Promise<void>;
 }) {
   const activeIds = new Set(presence.map((p) => p.collaboratorId));
   const [draftTitle, setDraftTitle] = useState(boardTitle);
@@ -26,9 +28,14 @@ export function PresenceBar({
 
   async function commitTitle() {
     const trimmed = draftTitle.trim();
-    const nextTitle = trimmed || "Untitled Board";
-    setDraftTitle(nextTitle);
-    await onRenameBoard(nextTitle);
+    // Only write when the user actually typed something — an empty field
+    // just keeps showing the placeholder, no forced default gets saved.
+    if (!trimmed) {
+      setDraftTitle("");
+      return;
+    }
+    setDraftTitle(trimmed);
+    await onRenameBoard(trimmed);
   }
 
   return (
@@ -53,7 +60,7 @@ export function PresenceBar({
               }
             }}
             className="mt-0.5 w-full max-w-xl border-none bg-transparent font-display text-xl font-semibold tracking-tight text-text-primary outline-none placeholder:text-text-muted"
-            placeholder="Untitled Board"
+            placeholder="Untitled board"
           />
         </div>
 
@@ -83,6 +90,14 @@ export function PresenceBar({
               />
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={() => void onSignOut()}
+            className="rounded-full border border-ink-border/70 bg-ink px-3 py-2 font-mono text-[11px] text-text-muted transition hover:border-signal-amber/40 hover:text-signal-amber"
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </header>

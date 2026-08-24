@@ -13,7 +13,6 @@ import {
   type CollisionDetection,
 } from "@dnd-kit/core";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useAuthBootstrap } from "../hooks/useAuthBootstrap";
 import { useBoardData } from "../hooks/useBoardData";
 import { usePresence } from "../hooks/usePresence";
 import { identityFor } from "../lib/identity";
@@ -55,17 +54,18 @@ export function Board({
   boardId,
   theme,
   onToggleTheme,
+  userId,
+  onSignOut,
 }: {
   boardId: string;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  userId: string;
+  onSignOut: () => Promise<void>;
 }) {
-  const {
-    session,
-    loading: authLoading,
-    error: authError,
-  } = useAuthBootstrap();
-  const ready = !!session;
+  // App only ever renders <Board> once a real session exists (see App.tsx),
+  // so board data / presence can always fetch right away.
+  const ready = true;
 
   const collisionDetectionStrategy = useStableCollisionDetection();
 
@@ -83,7 +83,7 @@ export function Board({
     createList,
     deleteList,
   } = useBoardData(boardId, ready);
-  const { presence } = usePresence(boardId, session?.user.id ?? null, ready);
+  const { presence } = usePresence(boardId, userId, ready);
 
   // Transient override applied only during an active drag, so a card can
   // visually jump to another list before the drop is committed to Supabase.
@@ -233,7 +233,7 @@ export function Board({
     setIsAddingList(false);
   }
 
-  if (authLoading || (ready && loading)) {
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-ink">
         <p className="font-mono text-sm text-text-muted">
@@ -243,11 +243,11 @@ export function Board({
     );
   }
 
-  if (authError || error) {
+  if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-ink px-6">
         <p className="max-w-md text-center font-mono text-sm text-signal-amber">
-          {authError ?? error}
+          {error}
         </p>
       </div>
     );
@@ -256,12 +256,13 @@ export function Board({
   return (
     <div className="flex h-screen flex-col bg-ink">
       <PresenceBar
-        boardTitle={boardTitle ?? "Untitled Board"}
+        boardTitle={boardTitle ?? ""}
         collaborators={Array.from(collaboratorsById.values())}
         presence={presence}
         theme={theme}
         onToggleTheme={onToggleTheme}
         onRenameBoard={updateBoardTitle}
+        onSignOut={onSignOut}
       />
 
       <DndContext

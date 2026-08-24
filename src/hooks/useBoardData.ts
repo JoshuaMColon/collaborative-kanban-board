@@ -161,14 +161,20 @@ export function useBoardData(
     [fetchAll],
   );
 
+  // Only writes a title the user actually typed — never forces a default
+  // "Untitled Board" string into local state or the database. An empty/
+  // whitespace-only value is a no-op, so the input's placeholder is what
+  // carries the "Untitled board" hint instead of a stored value.
   const updateBoardTitle = useCallback(
     async (title: string) => {
-      const nextTitle = title.trim() || "Untitled Board";
-      setBoardTitle(nextTitle);
+      const trimmed = title.trim();
+      if (!trimmed) return;
+
+      setBoardTitle(trimmed);
 
       const { error: updateError } = await supabase
         .from("boards")
-        .update({ title: nextTitle })
+        .update({ title: trimmed })
         .eq("id", boardId);
 
       if (updateError) {
