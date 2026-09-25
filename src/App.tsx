@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { Board } from "./components/Board";
+import { LatticeLoader } from "./components/LatticeLoader";
 import { useAuth } from "./hooks/useAuth";
 
 type ThemeMode = "light" | "dark";
@@ -43,8 +44,14 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-ink">
-        <p className="font-mono text-sm text-text-muted">Loading…</p>
+      <div className="flex h-screen items-center justify-center bg-ink text-text-muted">
+        <LatticeLoader
+          label="Loading session"
+          pattern="orbit"
+          grid={3}
+          shape="round"
+          color="currentColor"
+        />
       </div>
     );
   }

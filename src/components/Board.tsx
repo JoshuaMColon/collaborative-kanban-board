@@ -1,28 +1,30 @@
 import {
   DndContext,
   DragOverlay,
+  getFirstCollision,
   PointerSensor,
   pointerWithin,
   rectIntersection,
-  getFirstCollision,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
-  type CollisionDetection,
 } from "@dnd-kit/core";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { useBoardData } from "../hooks/useBoardData";
 import { usePresence } from "../hooks/usePresence";
 import { identityFor } from "../lib/identity";
 import type { BoardCard, Collaborator } from "../types";
 import { CardModal } from "./CardModal";
 import { CardTicket } from "./CardTicket";
+import { LatticeLoader } from "./LatticeLoader";
 import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
 
 const ORDER_GAP = 1024; // spacing between fractional order values
+const LightPillar = lazy(() => import("./LightPillar"));
 
 // Prefers whatever the pointer is literally inside; if the pointer is
 // momentarily between droppables (e.g. crossing a gap), holds onto the last
@@ -97,6 +99,9 @@ export function Board({
   const [editingCard, setEditingCard] = useState<BoardCard | null>(null);
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
+  const [electricCardIds, setElectricCardIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -235,12 +240,23 @@ export function Board({
     setIsAddingList(false);
   }
 
+  async function handleAddCard(listId: string, title: string) {
+    const cardId = await createCard(listId, title);
+    if (cardId) {
+      setElectricCardIds((prev) => new Set(prev).add(cardId));
+    }
+  }
+
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-ink">
-        <p className="font-mono text-sm text-text-muted">
-          Connecting to board…
-        </p>
+      <div className="flex h-screen items-center justify-center bg-ink text-text-muted">
+        <LatticeLoader
+          label="Connecting to board"
+          pattern="orbit"
+          grid={3}
+          shape="round"
+          color="currentColor"
+        />
       </div>
     );
   }
@@ -256,110 +272,132 @@ export function Board({
   }
 
   return (
-    <div className="flex h-screen flex-col bg-ink">
-      <PresenceBar
-        boardTitle={boardTitle ?? ""}
-        collaborators={Array.from(collaboratorsById.values())}
-        presence={presence}
-        theme={theme}
-        onToggleTheme={onToggleTheme}
-        onRenameBoard={updateBoardTitle}
-        onSignOut={onSignOut}
-      />
-
-      <DndContext
-        sensors={sensors}
-        collisionDetection={collisionDetectionStrategy}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex flex-1 items-start gap-4 overflow-x-auto px-6 py-5">
-          {[...lists]
-            .sort((a, b) => a.order - b.order)
-            .map((list) => (
-              <ListColumn
-                key={list.id}
-                list={list}
-                cards={cardsByList.get(list.id) ?? []}
-                collaboratorsById={collaboratorsById}
-                presenceByCard={presenceByCard}
-                onOpenCard={setEditingCard}
-                onAddCard={createCard}
-                onDeleteList={deleteList}
-              />
-            ))}
-
-          <div className="w-full shrink-0 lg:w-72">
-            {isAddingList ? (
-              <div className="rounded-lg border border-ink-border bg-ink-surface p-2">
-                <input
-                  autoFocus
-                  value={newListTitle}
-                  onChange={(e) => setNewListTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void submitNewList();
-                    }
-                    if (e.key === "Escape") {
-                      setIsAddingList(false);
-                      setNewListTitle("");
-                    }
-                  }}
-                  placeholder="List title…"
-                  className="w-full border-none bg-transparent font-display text-sm font-semibold text-text-primary outline-none placeholder:text-text-muted"
-                />
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={submitNewList}
-                    disabled={!newListTitle.trim()}
-                    className="rounded-sm bg-signal-amber px-2.5 py-1 font-mono text-[11px] font-semibold text-ink disabled:opacity-50"
-                  >
-                    Add list
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddingList(false);
-                      setNewListTitle("");
-                    }}
-                    className="rounded-sm px-2.5 py-1 font-mono text-[11px] text-text-muted hover:text-text-primary"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsAddingList(true)}
-                className="w-full rounded-lg border border-dashed border-ink-border/70 px-3 py-3 text-left font-mono text-[11px] text-text-muted transition hover:border-signal-amber/40 hover:text-signal-amber"
-              >
-                + Add list
-              </button>
-            )}
-          </div>
-        </div>
-
-        <DragOverlay>
-          {activeCard ? (
-            <div className="w-72">
-              <CardTicket card={activeCard} viewers={[]} />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-
-      {editingCard && (
-        <CardModal
-          card={editingCard}
-          onClose={() => setEditingCard(null)}
-          onSave={(updates) => updateCard(editingCard.id, updates)}
-          onDelete={() => deleteCard(editingCard.id)}
+    <div className="relative isolate flex h-screen flex-col overflow-hidden bg-ink">
+      <Suspense fallback={null}>
+        <LightPillar
+          topColor="#5227ff"
+          bottomColor="#ff9ffc"
+          intensity={1}
+          rotationSpeed={0.3}
+          glowAmount={0.002}
+          pillarWidth={3}
+          pillarHeight={0.4}
+          noiseIntensity={0.5}
+          pillarRotation={25}
+          interactive={false}
+          mixBlendMode="screen"
+          quality="high"
+          className="z-0 opacity-70"
         />
-      )}
+      </Suspense>
+
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        <PresenceBar
+          boardTitle={boardTitle ?? ""}
+          collaborators={Array.from(collaboratorsById.values())}
+          presence={presence}
+          theme={theme}
+          onToggleTheme={onToggleTheme}
+          onRenameBoard={updateBoardTitle}
+          onSignOut={onSignOut}
+        />
+
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collisionDetectionStrategy}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex flex-1 items-start gap-4 overflow-x-auto px-6 py-5">
+            {[...lists]
+              .sort((a, b) => a.order - b.order)
+              .map((list) => (
+                <ListColumn
+                  key={list.id}
+                  list={list}
+                  cards={cardsByList.get(list.id) ?? []}
+                  collaboratorsById={collaboratorsById}
+                  presenceByCard={presenceByCard}
+                  onOpenCard={setEditingCard}
+                  onAddCard={handleAddCard}
+                  onDeleteList={deleteList}
+                  electricCardIds={electricCardIds}
+                  theme={theme}
+                />
+              ))}
+
+            <div className="w-full shrink-0 lg:w-72">
+              {isAddingList ? (
+                <div className="rounded-lg border border-ink-border bg-ink-surface p-2">
+                  <input
+                    autoFocus
+                    value={newListTitle}
+                    onChange={(e) => setNewListTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void submitNewList();
+                      }
+                      if (e.key === "Escape") {
+                        setIsAddingList(false);
+                        setNewListTitle("");
+                      }
+                    }}
+                    placeholder="List title…"
+                    className="w-full border-none bg-transparent font-display text-sm font-semibold text-text-primary outline-none placeholder:text-text-muted"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={submitNewList}
+                      disabled={!newListTitle.trim()}
+                      className="rounded-sm bg-signal-amber px-2.5 py-1 font-mono text-[11px] font-semibold text-ink disabled:opacity-50"
+                    >
+                      Add list
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingList(false);
+                        setNewListTitle("");
+                      }}
+                      className="rounded-sm px-2.5 py-1 font-mono text-[11px] text-text-muted hover:text-text-primary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingList(true)}
+                  className="w-full rounded-lg border border-dashed border-ink-border/70 px-3 py-3 text-left font-mono text-[11px] text-text-muted transition hover:border-signal-amber/40 hover:text-signal-amber"
+                >
+                  + Add list
+                </button>
+              )}
+            </div>
+          </div>
+
+          <DragOverlay>
+            {activeCard ? (
+              <div className="w-72">
+                <CardTicket card={activeCard} viewers={[]} />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+
+        {editingCard && (
+          <CardModal
+            card={editingCard}
+            onClose={() => setEditingCard(null)}
+            onSave={(updates) => updateCard(editingCard.id, updates)}
+            onDelete={() => deleteCard(editingCard.id)}
+          />
+        )}
+      </div>
     </div>
   );
 }

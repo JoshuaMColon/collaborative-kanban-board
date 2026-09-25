@@ -13,7 +13,7 @@ interface UseBoardDataResult {
   error: string | null;
   moveCard: (cardId: string, listId: string, order: number) => Promise<void>;
   updateBoardTitle: (title: string) => Promise<void>;
-  createCard: (listId: string, title: string) => Promise<void>;
+  createCard: (listId: string, title: string) => Promise<string | null>;
   updateCard: (
     cardId: string,
     updates: Partial<Pick<BoardCard, "title" | "description" | "priority">>,
@@ -188,7 +188,7 @@ export function useBoardData(
   const createCard = useCallback(
     async (listId: string, title: string) => {
       const trimmed = title.trim();
-      if (!trimmed) return;
+      if (!trimmed) return null;
 
       const siblingsInList = cards.filter((c) => c.listId === listId);
       const maxOrder = siblingsInList.length
@@ -212,7 +212,7 @@ export function useBoardData(
 
       if (insertError) {
         setError(insertError.message);
-        return;
+        return null;
       }
 
       if (data) {
@@ -220,7 +220,10 @@ export function useBoardData(
         setCards((prev) =>
           prev.some((c) => c.id === mapped.id) ? prev : [...prev, mapped],
         );
+        return mapped.id;
       }
+
+      return null;
     },
     [cards, boardId],
   );

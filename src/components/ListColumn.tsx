@@ -20,6 +20,8 @@ export function ListColumn({
   onOpenCard,
   onAddCard,
   onDeleteList,
+  electricCardIds,
+  theme,
 }: {
   list: BoardList;
   cards: BoardCard[];
@@ -28,6 +30,8 @@ export function ListColumn({
   onOpenCard: (card: BoardCard) => void;
   onAddCard: (listId: string, title: string) => Promise<void>;
   onDeleteList: (listId: string) => Promise<void>;
+  electricCardIds: ReadonlySet<string>;
+  theme: "light" | "dark";
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: list.id,
@@ -114,6 +118,8 @@ export function ListColumn({
                 }
                 viewers={viewers}
                 onOpen={onOpenCard}
+                isNew={electricCardIds.has(card.id)}
+                electricColor={theme === "dark" ? "#ff3030" : "#7df9ff"}
               />
             );
           })}

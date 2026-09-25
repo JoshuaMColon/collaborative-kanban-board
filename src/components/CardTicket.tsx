@@ -1,6 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { BoardCard, Collaborator, PresenceEntry } from "../types";
+import { ElectricBorder } from "./ElectricBorder";
 import { PresenceAvatar } from "./PresenceAvatar";
 import { PriorityTag } from "./PriorityTag";
 
@@ -9,11 +10,15 @@ export function CardTicket({
   assignee,
   viewers,
   onOpen,
+  isNew = false,
+  electricColor = "#7df9ff",
 }: {
   card: BoardCard;
   assignee?: Collaborator;
   viewers: (Collaborator & { presence: PresenceEntry })[];
   onOpen?: (card: BoardCard) => void;
+  isNew?: boolean;
+  electricColor?: string;
 }) {
   const {
     attributes,
@@ -29,7 +34,7 @@ export function CardTicket({
     transition,
   };
 
-  return (
+  const ticket = (
     <div
       ref={setNodeRef}
       style={style}
@@ -79,5 +84,19 @@ export function CardTicket({
         )}
       </div>
     </div>
+  );
+
+  return isNew ? (
+    <ElectricBorder
+      color={electricColor}
+      speed={1}
+      chaos={0.12}
+      thickness={2}
+      borderRadius={8}
+    >
+      {ticket}
+    </ElectricBorder>
+  ) : (
+    ticket
   );
 }
