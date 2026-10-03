@@ -1,6 +1,12 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { Collaborator, PresenceEntry } from "../types";
 import { PresenceAvatar } from "./PresenceAvatar";
+
+const SquishSwitch = lazy(() =>
+  import("./SquishSwitch").then((module) => ({
+    default: module.SquishSwitch,
+  })),
+);
 
 export function PresenceBar({
   boardTitle,
@@ -65,14 +71,38 @@ export function PresenceBar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            className="flex items-center gap-2 rounded-full border border-ink-border/70 bg-ink px-3 py-2 text-sm font-medium text-text-primary transition hover:border-ink-borderLight"
+          <Suspense
+            fallback={
+              <button
+                type="button"
+                onClick={onToggleTheme}
+                title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+                className="flex items-center gap-2 rounded-full border border-ink-border/70 bg-ink px-3 py-2 text-sm font-medium text-text-primary transition hover:border-ink-borderLight"
+              >
+                {theme === "dark" ? "Light mode" : "Dark mode"}
+              </button>
+            }
           >
-            <span className="text-base">{theme === "dark" ? "☀️" : "🌙"}</span>
-            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-          </button>
+            <SquishSwitch
+              checked={theme === "dark"}
+              onChange={onToggleTheme}
+              label={theme === "dark" ? "Light mode" : "Dark mode"}
+              ariaLabel={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              trackColor="#27272a"
+              trackOnColor="#f5f5f5"
+              width={76}
+              height={38}
+              radius={19}
+              speed={50}
+              stretch={36}
+              hoverScale={1.035}
+              colorDuration={320}
+              disabled={false}
+              thumbColor="#4e4e51"
+              thumbOnColor="#27272a"
+            />
+          </Suspense>
 
           <div className="flex items-center gap-1.5 rounded-full border border-live-green/30 bg-live-green/10 px-2.5 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-live-green" />

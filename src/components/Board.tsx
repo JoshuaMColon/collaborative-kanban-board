@@ -24,7 +24,9 @@ import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
 
 const ORDER_GAP = 1024; // spacing between fractional order values
-const LightPillar = lazy(() => import("./LightPillar"));
+const MoltenMetal = lazy(() =>
+  import("./MoltenMetal").then((module) => ({ default: module.MoltenMetal })),
+);
 
 // Prefers whatever the pointer is literally inside; if the pointer is
 // momentarily between droppables (e.g. crossing a gap), holds onto the last
@@ -273,23 +275,30 @@ export function Board({
 
   return (
     <div className="relative isolate flex h-screen flex-col overflow-hidden bg-ink">
-      <Suspense fallback={null}>
-        <LightPillar
-          topColor="#5227ff"
-          bottomColor="#ff9ffc"
-          intensity={1}
-          rotationSpeed={0.3}
-          glowAmount={0.002}
-          pillarWidth={3}
-          pillarHeight={0.4}
-          noiseIntensity={0.5}
-          pillarRotation={25}
-          interactive={false}
-          mixBlendMode="screen"
-          quality="high"
-          className="z-0 opacity-70"
-        />
-      </Suspense>
+      {theme === "dark" && (
+        <Suspense fallback={null}>
+          <MoltenMetal
+            color1="#5227FF"
+            color2="#FF9FFC"
+            color3="#FFFFFF"
+            speed={0.35}
+            scale={4}
+            detail={3}
+            glow={1.6}
+            coreSize={0.1}
+            swirl={1}
+            fold={-0.2}
+            blackPoint={0.05}
+            brightness={1.3}
+            colorMode="molten"
+            grain
+            grainIntensity={0.05}
+            mouseInteraction
+            mouseStrength={0.3}
+            opacity={1}
+          />
+        </Suspense>
+      )}
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <PresenceBar
