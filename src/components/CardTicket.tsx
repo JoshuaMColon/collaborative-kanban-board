@@ -1,9 +1,77 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { BoardCard, Collaborator, PresenceEntry } from "../types";
-import { ElectricBorder } from "./ElectricBorder";
+import { Celebration } from "./Celebration";
 import { PresenceAvatar } from "./PresenceAvatar";
+import { PRIORITY_META } from "../lib/priority";
 import { PriorityTag } from "./PriorityTag";
+import { CardSpotlightLayers } from "./reactbits/CardSpotlight";
+import { useCardSpotlight } from "./reactbits/useCardSpotlight";
+
+/** Pure visual card, shared by the sortable card and the drag overlay. */
+export function CardFace({
+  card,
+  assignee,
+  viewers,
+  lifted = false,
+}: {
+  card: BoardCard;
+  assignee?: Collaborator;
+  viewers: (Collaborator & { presence: PresenceEntry })[];
+  lifted?: boolean;
+}) {
+  const meta = PRIORITY_META[card.priority];
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className={`absolute bottom-3 left-0 top-3 w-1 rounded-r-full ${meta.strip}`}
+      />
+
+      <div className="flex items-start justify-between gap-2">
+        <PriorityTag priority={card.priority} />
+        <span className="pt-0.5 font-mono text-[10.5px] tabular-nums tracking-tight text-text-muted">
+          {card.code}
+        </span>
+      </div>
+
+      <p className="mt-2 break-words font-display text-[15px] font-semibold leading-snug text-text-primary">
+        {card.title}
+      </p>
+
+      {card.description && (
+        <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-text-secondary">
+          {card.description}
+        </p>
+      )}
+
+      {(viewers.length > 0 || assignee) && (
+        <div className="mt-3 flex items-center justify-between">
+          <div className="flex -space-x-1.5">
+            {viewers.map((v) => (
+              <PresenceAvatar
+                key={v.id}
+                collaborator={v}
+                isActive={!lifted}
+                size="sm"
+              />
+            ))}
+          </div>
+          {assignee && (
+            <span
+              className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-[#1c1917] ring-2 ring-surface"
+              style={{ backgroundColor: assignee.color }}
+              title={`Assigned to ${assignee.name}`}
+            >
+              {assignee.initials}
+              <span className="sr-only">, assigned to {assignee.name}</span>
+            </span>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 
 export function CardTicket({
   card,
@@ -11,14 +79,16 @@ export function CardTicket({
   viewers,
   onOpen,
   isNew = false,
-  electricColor = "#7df9ff",
+  celebrate = false,
 }: {
   card: BoardCard;
   assignee?: Collaborator;
   viewers: (Collaborator & { presence: PresenceEntry })[];
   onOpen?: (card: BoardCard) => void;
+  /** Briefly highlights a card that was just added. */
   isNew?: boolean;
-  electricColor?: string;
+  /** Shows a small check + confetti after the card lands in a "Done" list. */
+  celebrate?: boolean;
 }) {
   const {
     attributes,
@@ -28,75 +98,63 @@ export function CardTicket({
     transition,
     isDragging,
   } = useSortable({ id: card.id, data: { type: "card", card } });
+  // Cursor-following warm glow; off while this card is the drag placeholder.
+  const spotlight = useCardSpotlight(isDragging);
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    // Keep dnd-kit's transform transition and add our own soft hover easing.
+    transition: [
+      transition,
+      "box-shadow 200ms ease",
+      "border-color 200ms ease",
+      "opacity 200ms ease",
+    ]
+      .filter(Boolean)
+      .join(", "),
   };
 
-  const ticket = (
+  return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
+      onPointerMove={spotlight.onPointerMove}
       onClick={() => onOpen?.(card)}
-      className={`group relative cursor-grab select-none rounded-md border border-ink-border bg-ink-surface pl-4 pr-3 py-3 shadow-sm transition-colors hover:border-ink-borderLight active:cursor-grabbing ${
-        isDragging ? "opacity-40" : "opacity-100"
+      onKeyDown={(e) => {
+        // dnd-kit's attributes make the card focusable; let Enter open it.
+        if (e.key === "Enter") onOpen?.(card);
+      }}
+      aria-label={`${card.title}, ${PRIORITY_META[card.priority].label} priority, ${card.code}`}
+      className={`card-spotlight group relative isolate cursor-grab select-none rounded-xl border bg-surface py-3 pl-4 pr-3 active:cursor-grabbing ${
+        isDragging
+          ? "border-dashed border-line-strong bg-surface-2 opacity-60 shadow-none [&>*]:opacity-30"
+          : "border-line/80 shadow-soft hover:border-line-strong hover:shadow-soft-hover"
+      } ${isNew && !isDragging ? "animate-newCard" : ""} ${
+        // The card is its own stacking context (for the spotlight), so lift it
+        // above its neighbours while confetti spills past its edges.
+        celebrate && !isDragging ? "z-[1]" : ""
       }`}
     >
-      <div
-        className="absolute left-1.5 top-0 bottom-0 flex flex-col justify-evenly"
-        aria-hidden="true"
-      >
-        {Array.from({ length: 6 }).map((_, i) => (
-          <span key={i} className="h-1 w-1 rounded-full bg-ink-border" />
-        ))}
-      </div>
-
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-[11px] text-text-muted">
-          {card.code}
-        </span>
-        <PriorityTag priority={card.priority} />
-      </div>
-
-      <p className="mt-1.5 font-display text-[15px] font-medium leading-snug text-text-primary">
-        {card.title}
-      </p>
-
-      <div className="mt-3 flex items-center justify-between">
-        <div className="flex -space-x-1.5">
-          {viewers.map((v) => (
-            <PresenceAvatar key={v.id} collaborator={v} isActive size="sm" />
-          ))}
-        </div>
-        {assignee && (
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] text-text-muted">
-              {assignee.initials}
-            </span>
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: assignee.color }}
-            />
-          </div>
-        )}
-      </div>
+      {!isDragging && <CardSpotlightLayers />}
+      <CardFace card={card} assignee={assignee} viewers={viewers} />
+      {celebrate && !isDragging && <Celebration />}
     </div>
   );
+}
 
-  return isNew ? (
-    <ElectricBorder
-      color={electricColor}
-      speed={1}
-      chaos={0.12}
-      thickness={2}
-      borderRadius={8}
-    >
-      {ticket}
-    </ElectricBorder>
-  ) : (
-    ticket
+/** What follows the pointer while dragging. */
+export function CardDragPreview({
+  card,
+  assignee,
+}: {
+  card: BoardCard;
+  assignee?: Collaborator;
+}) {
+  return (
+    <div className="card-lifted relative cursor-grabbing rounded-xl border border-line-strong bg-surface py-3 pl-4 pr-3 shadow-lift">
+      <CardFace card={card} assignee={assignee} viewers={[]} lifted />
+    </div>
   );
 }

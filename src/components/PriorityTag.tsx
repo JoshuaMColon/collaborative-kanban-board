@@ -1,27 +1,15 @@
+import { PRIORITY_META } from "../lib/priority";
 import type { CardPriority } from "../types";
 
-const STYLES: Record<CardPriority, { label: string; className: string }> = {
-  urgent: {
-    label: "URGENT",
-    className: "bg-signal-amber/15 text-signal-amber border-signal-amber/40",
-  },
-  standard: {
-    label: "STANDARD",
-    className: "bg-text-secondary/10 text-text-secondary border-text-secondary/30",
-  },
-  low: {
-    label: "LOW",
-    className: "bg-live-green/10 text-live-green border-live-green/30",
-  },
-};
-
 export function PriorityTag({ priority }: { priority: CardPriority }) {
-  const style = STYLES[priority];
+  const meta = PRIORITY_META[priority];
   return (
     <span
-      className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tracking-wider ${style.className}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${meta.chip}`}
     >
-      {style.label}
+      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+      {meta.label}
+      <span className="sr-only"> priority</span>
     </span>
   );
 }

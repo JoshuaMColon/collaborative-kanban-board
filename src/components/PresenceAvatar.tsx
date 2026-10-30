@@ -21,10 +21,10 @@ export function PresenceAvatar({
         />
       )}
       <div
-        className={`relative flex ${dims} items-center justify-center rounded-full border-2 font-mono font-semibold text-ink`}
+        className={`relative flex ${dims} items-center justify-center rounded-full border-2 font-bold text-[#1c1917]`}
         style={{
           backgroundColor: collaborator.color,
-          borderColor: "var(--page-bg)",
+          borderColor: "rgb(var(--surface))",
         }}
       >
         {collaborator.initials}
@@ -32,7 +32,10 @@ export function PresenceAvatar({
       {isActive && (
         <span
           className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2"
-          style={{ backgroundColor: "#3DDC97", borderColor: "var(--page-bg)" }}
+          style={{
+            backgroundColor: "rgb(var(--success))",
+            borderColor: "rgb(var(--surface))",
+          }}
           aria-hidden="true"
         />
       )}

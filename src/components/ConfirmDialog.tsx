@@ -60,7 +60,7 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center animate-fadeIn bg-[rgb(var(--shadow)/0.35)] p-4 backdrop-blur-[2px]"
       onClick={onCancel}
       onKeyDown={handleKeyDown}
     >
@@ -69,16 +69,16 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={messageId}
-        className="w-full max-w-sm rounded-lg border border-ink-border bg-ink-surface p-5 shadow-xl"
+        className="w-full max-w-sm animate-fadeUp rounded-2xl border border-line bg-surface p-6 shadow-pop"
         onClick={(e) => e.stopPropagation()}
       >
         <h2
           id={titleId}
-          className="font-display text-base font-semibold text-text-primary"
+          className="font-display text-lg font-bold text-text-primary"
         >
           {title}
         </h2>
-        <p id={messageId} className="mt-2 text-sm text-text-secondary">
+        <p id={messageId} className="mt-2 text-sm leading-relaxed text-text-secondary">
           {message}
         </p>
         <div className="mt-5 flex justify-end gap-2">
@@ -86,7 +86,7 @@ export function ConfirmDialog({
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="rounded-sm px-3 py-1.5 text-sm text-text-secondary transition hover:text-text-primary disabled:opacity-50"
+            className="rounded-lg px-3.5 py-2 text-sm font-medium text-text-secondary transition hover:bg-surface-2 hover:text-text-primary disabled:opacity-50"
           >
             {cancelLabel}
           </button>
@@ -94,7 +94,7 @@ export function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className="rounded-sm bg-signal-amber px-4 py-1.5 text-sm font-semibold text-ink transition hover:bg-signal-amber/90 disabled:opacity-50"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg shadow-soft transition hover:bg-accent/90 disabled:opacity-50"
           >
             {confirmLabel}
           </button>

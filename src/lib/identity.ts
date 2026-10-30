@@ -1,6 +1,7 @@
 import type { Collaborator } from "../types";
 
-const PALETTE = ["#FF8A3D", "#3DDC97", "#6FA8FF", "#E45B8C", "#C9A63D"];
+// Soft pastels; avatars render dark text on these (all >= 7:1 contrast).
+const PALETTE = ["#F4A582", "#8FD1B0", "#9DBBF2", "#E8A0BF", "#E9C46A"];
 
 function hashString(input: string): number {
   let hash = 0;
