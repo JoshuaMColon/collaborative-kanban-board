@@ -12,7 +12,16 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useBoardData } from "../hooks/useBoardData";
 import { usePresence } from "../hooks/usePresence";
 import { identityFor } from "../lib/identity";
@@ -24,6 +33,10 @@ import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
 
 const ORDER_GAP = 1024; // spacing between fractional order values
+// When two neighbours get closer than this, renumber the whole list instead
+// of inserting yet another midpoint.
+const MIN_ORDER_GAP = 0.001;
+const ACTION_ERROR_TIMEOUT_MS = 7000;
 const MoltenMetal = lazy(() =>
   import("./MoltenMetal").then((module) => ({ default: module.MoltenMetal })),
 );
@@ -81,7 +94,11 @@ export function Board({
     cards,
     loading,
     error,
+    actionError,
+    dismissActionError,
+    retry,
     moveCard,
+    reorderList,
     updateBoardTitle,
     createCard,
     updateCard,
@@ -90,6 +107,13 @@ export function Board({
     deleteList,
   } = useBoardData(boardId, ready);
   const { presence } = usePresence(boardId, userId, userEmail, ready);
+
+  // Failed writes show a dismissible toast instead of replacing the board.
+  useEffect(() => {
+    if (!actionError) return;
+    const timer = window.setTimeout(dismissActionError, ACTION_ERROR_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [actionError, dismissActionError]);
 
   // Transient override applied only during an active drag, so a card can
   // visually jump to another list before the drop is committed to Supabase.
@@ -171,12 +195,9 @@ export function Board({
     const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
 
-    const targetListId =
-      dragOverride?.cardId === activeId
-        ? dragOverride.listId
-        : overIsList
-          ? overId
-          : (overCard?.listId ?? activeCardData.listId);
+    // Follow whatever list the pointer is over now, so a card can cross
+    // several lists (or come back) in one drag.
+    const targetListId = overIsList ? overId : overCard?.listId;
     if (!targetListId) return;
 
     const currentListId =
@@ -190,6 +211,8 @@ export function Board({
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    // Read the override from this render before clearing it.
+    const override = dragOverride;
     setActiveCard(null);
     setDragOverride(null);
     if (!over) return;
@@ -203,23 +226,44 @@ export function Board({
     const overCard = findCard(overId);
 
     const targetListId =
-      dragOverride?.cardId === activeId
-        ? dragOverride.listId
+      override?.cardId === activeId
+        ? override.listId
         : overIsList
           ? overId
           : (overCard?.listId ?? activeCardData.listId);
 
-    const siblings = cards
-      .filter((c) => c.listId === targetListId && c.id !== activeId)
-      .sort((a, b) => a.order - b.order);
+    // The target list exactly as it was rendered during the drag (the
+    // dragged card is already in it via the override), sorted by order.
+    const renderedIds = (cardsByList.get(targetListId) ?? []).map((c) => c.id);
+    if (!renderedIds.includes(activeId)) renderedIds.push(activeId);
 
-    const overIndex =
-      overCard && overCard.id !== activeId && overCard.listId === targetListId
-        ? siblings.findIndex((c) => c.id === overCard.id)
-        : siblings.length;
+    const activeIndex = renderedIds.indexOf(activeId);
+    let overIndex: number;
+    if (overId === activeId) {
+      overIndex = activeIndex; // dropped on itself
+    } else if (overCard && renderedIds.includes(overCard.id)) {
+      overIndex = renderedIds.indexOf(overCard.id);
+    } else {
+      overIndex = renderedIds.length - 1; // dropped on the list itself: end
+    }
 
-    const before = overIndex > 0 ? siblings[overIndex - 1] : null;
-    const after = overIndex < siblings.length ? siblings[overIndex] : null;
+    const changedList = targetListId !== activeCardData.listId;
+    if (!changedList && overIndex === activeIndex) return; // no-op drop
+
+    // Same semantics @dnd-kit's sortable preview uses, so the card lands
+    // exactly where it was shown — in both drag directions.
+    const orderedIds = arrayMove(renderedIds, activeIndex, overIndex);
+    const newIndex = orderedIds.indexOf(activeId);
+    const before = newIndex > 0 ? findCard(orderedIds[newIndex - 1]) : null;
+    const after =
+      newIndex < orderedIds.length - 1
+        ? findCard(orderedIds[newIndex + 1])
+        : null;
+
+    if (before && after && after.order - before.order < MIN_ORDER_GAP) {
+      await reorderList(targetListId, orderedIds);
+      return;
+    }
 
     let newOrder: number;
     if (before && after) newOrder = (before.order + after.order) / 2;
@@ -263,12 +307,23 @@ export function Board({
     );
   }
 
+  // Only a failed initial load blocks the board; write failures use the toast.
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-ink px-6">
-        <p className="max-w-md text-center font-mono text-sm text-signal-amber">
-          {error}
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-ink px-6">
+        <p
+          role="alert"
+          className="max-w-md text-center font-mono text-sm text-signal-amber"
+        >
+          Couldn't load the board: {error}
         </p>
+        <button
+          type="button"
+          onClick={() => void retry()}
+          className="rounded-sm bg-signal-amber px-4 py-1.5 text-sm font-semibold text-ink transition hover:bg-signal-amber/90"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -397,6 +452,28 @@ export function Board({
             ) : null}
           </DragOverlay>
         </DndContext>
+
+        {actionError && (
+          <div
+            role="alert"
+            className="fixed bottom-4 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-start gap-3 rounded-lg border border-signal-amber/40 bg-ink-surface px-4 py-3 shadow-xl"
+          >
+            <p className="flex-1 text-sm text-text-primary">
+              {actionError}
+              <span className="mt-0.5 block font-mono text-[11px] text-text-muted">
+                The board was refreshed to match the server.
+              </span>
+            </p>
+            <button
+              type="button"
+              onClick={dismissActionError}
+              className="rounded-sm px-1 text-text-muted transition hover:text-text-primary"
+              aria-label="Dismiss message"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {editingCard && (
           <CardModal
