@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { useIsDarkTheme } from "../hooks/useIsDarkTheme";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 
 const Aurora = lazy(() => import("./reactbits/Aurora"));
@@ -15,16 +16,6 @@ function supportsWebGL2() {
   }
   return webgl2;
 }
-
-function subscribeTheme(callback: () => void) {
-  const observer = new MutationObserver(callback);
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["class"],
-  });
-  return () => observer.disconnect();
-}
-const isDark = () => document.documentElement.classList.contains("dark");
 
 function subscribeVisibility(callback: () => void) {
   document.addEventListener("visibilitychange", callback);
@@ -55,7 +46,7 @@ const PALETTES = {
  */
 export function AuroraLayer() {
   const reducedMotion = usePrefersReducedMotion();
-  const dark = useSyncExternalStore(subscribeTheme, isDark, () => false);
+  const dark = useIsDarkTheme();
   const hidden = useSyncExternalStore(subscribeVisibility, isHidden, () => false);
   const [enabled, setEnabled] = useState(false);
 

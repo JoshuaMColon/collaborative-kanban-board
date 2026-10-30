@@ -124,5 +124,6 @@ Some UI motion is built on components from [React Bits](https://reactbits.dev) b
 - **Aurora**: the soft animated background behind the board and sign-in screen (WebGL2, paused when the tab is hidden, and replaced by the static CSS gradient under `prefers-reduced-motion` or without WebGL).
 - **Blur Text**: the one-time board-title reveal and the sign-in heading.
 - **Spotlight Card**: adapted into the cursor-following warm glow on cards (`CardSpotlight.tsx` / `useCardSpotlight.ts`).
+- **Click Spark**: small warm sparks on mouse clicks (`ClickSpark.tsx`, adapted to listen app-wide from a pointer-events-none layer, skip drags, and stay off under `prefers-reduced-motion`).
 
 React Bits is licensed under the **MIT + Commons Clause License Condition v1.0**, Copyright (c) 2026 David Haz. The full license text is in [`src/components/reactbits/LICENSE.md`](src/components/reactbits/LICENSE.md), and every copied file carries the copyright notice. The components are used here as part of this application and are not sold or redistributed on their own.

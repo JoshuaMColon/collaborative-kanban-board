@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { Board } from "./components/Board";
 import { CalmBackground } from "./components/CalmBackground";
+import { ClickSparkLayer } from "./components/ClickSparkLayer";
 import { LatticeLoader } from "./components/LatticeLoader";
 import { useAuth } from "./hooks/useAuth";
 
@@ -31,49 +32,58 @@ function App() {
     window.localStorage.setItem("kanban-theme", theme);
   }, [theme]);
 
-  if (!boardId) {
-    return (
-      <div className="flex h-screen items-center justify-center px-6">
-        <CalmBackground />
-        <p className="max-w-md rounded-2xl border border-line bg-surface px-5 py-4 text-center text-sm text-text-primary shadow-soft">
-          Missing VITE_TEST_BOARD_ID. Add it to .env.local (the board's UUID
-          from Supabase).
-        </p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center text-accent">
-        <CalmBackground />
-        <LatticeLoader
-          label="Loading session"
-          pattern="orbit"
-          grid={3}
-          shape="round"
-          color="currentColor"
-        />
-      </div>
-    );
-  }
-
-  if (!session) {
-    return <AuthScreen onSignIn={signIn} onSignUp={signUp} error={error} />;
-  }
-
   return (
-    <Board
-      boardId={boardId}
-      theme={theme}
-      onToggleTheme={() =>
-        setTheme((current) => (current === "dark" ? "light" : "dark"))
-      }
-      userId={session.user.id}
-      userEmail={session.user.email ?? null}
-      onSignOut={signOut}
-    />
+    <>
+      <ClickSparkLayer />
+      {renderScreen()}
+    </>
   );
+
+  function renderScreen() {
+    if (!boardId) {
+      return (
+        <div className="flex h-screen items-center justify-center px-6">
+          <CalmBackground />
+          <p className="max-w-md rounded-2xl border border-line bg-surface px-5 py-4 text-center text-sm text-text-primary shadow-soft">
+            Missing VITE_TEST_BOARD_ID. Add it to .env.local (the board's UUID
+            from Supabase).
+          </p>
+        </div>
+      );
+    }
+
+    if (loading) {
+      return (
+        <div className="flex h-screen items-center justify-center text-accent">
+          <CalmBackground />
+          <LatticeLoader
+            label="Loading session"
+            pattern="orbit"
+            grid={3}
+            shape="round"
+            color="currentColor"
+          />
+        </div>
+      );
+    }
+
+    if (!session) {
+      return <AuthScreen onSignIn={signIn} onSignUp={signUp} error={error} />;
+    }
+
+    return (
+      <Board
+        boardId={boardId}
+        theme={theme}
+        onToggleTheme={() =>
+          setTheme((current) => (current === "dark" ? "light" : "dark"))
+        }
+        userId={session.user.id}
+        userEmail={session.user.email ?? null}
+        onSignOut={signOut}
+      />
+    );
+  }
 }
 
 export default App;

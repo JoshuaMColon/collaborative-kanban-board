@@ -25,6 +25,7 @@ import {
 import { useBoardData } from "../hooks/useBoardData";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { usePresence } from "../hooks/usePresence";
+import { markDragEnd, markDragStart } from "../lib/dragState";
 import { identityFor } from "../lib/identity";
 import type { BoardCard, Collaborator } from "../types";
 import { CardModal } from "./CardModal";
@@ -217,7 +218,14 @@ export function Board({
   }
 
   function handleDragStart(event: DragStartEvent) {
+    markDragStart();
     setActiveCard(findCard(String(event.active.id)));
+  }
+
+  function handleDragCancel() {
+    markDragEnd();
+    setActiveCard(null);
+    setDragOverride(null);
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -249,6 +257,7 @@ export function Board({
   }
 
   async function handleDragEnd(event: DragEndEvent) {
+    markDragEnd();
     const { active, over } = event;
     // Read the override from this render before clearing it.
     const override = dragOverride;
@@ -410,6 +419,7 @@ export function Board({
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
           <div className="flex flex-1 items-start gap-4 overflow-x-auto px-6 py-5">
             {[...lists]
