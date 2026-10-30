@@ -11,6 +11,7 @@ import type {
   PresenceEntry,
 } from "../types";
 import { CardTicket } from "./CardTicket";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export function ListColumn({
   list,
@@ -41,6 +42,7 @@ export function ListColumn({
   const [isAdding, setIsAdding] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   async function submitNewCard() {
     const trimmed = draftTitle.trim();
@@ -56,19 +58,23 @@ export function ListColumn({
     setIsAdding(false);
   }
 
-  async function handleDeleteList() {
-    const confirmMsg =
-      cards.length > 0
-        ? `Delete "${list.title}" and its ${cards.length} card(s)? This can't be undone.`
-        : `Delete "${list.title}"? This can't be undone.`;
-    if (!window.confirm(confirmMsg)) return;
-    await onDeleteList(list.id);
+  const cardCountLabel = `${cards.length} card${cards.length === 1 ? "" : "s"}`;
+  const deleteMessage =
+    cards.length > 0
+      ? `This will permanently delete "${list.title}" and its ${cardCountLabel}. This can't be undone.`
+      : `This will permanently delete the empty list "${list.title}". This can't be undone.`;
+
+  function handleConfirmDelete() {
+    setConfirmingDelete(false);
+    // Optimistic in the hook: the column disappears right away and comes
+    // back (with a message) if the delete fails.
+    void onDeleteList(list.id);
   }
 
   return (
-    <div className="flex w-full shrink-0 flex-col lg:w-72">
+    <div className="group/list flex w-full shrink-0 flex-col lg:w-72">
       <div className="mb-2 flex items-center justify-between px-1">
-        <h2 className="font-display text-sm font-semibold text-text-secondary">
+        <h2 className="min-w-0 truncate font-display text-sm font-semibold text-text-secondary">
           {list.title}
         </h2>
         <div className="flex items-center gap-1.5">
@@ -77,12 +83,23 @@ export function ListColumn({
           </span>
           <button
             type="button"
-            onClick={handleDeleteList}
-            className="rounded-sm px-1 font-mono text-[11px] text-text-muted opacity-0 transition hover:text-signal-amber group-hover:opacity-100 focus:opacity-100"
-            aria-label={`Delete ${list.title} list`}
+            onClick={() => setConfirmingDelete(true)}
+            className="rounded-sm p-1 text-text-muted transition hover:bg-signal-amber/10 hover:text-signal-amber focus-visible:opacity-100 lg:opacity-0 lg:group-hover/list:opacity-100 lg:group-focus-within/list:opacity-100"
+            aria-label={`Delete list "${list.title}"`}
             title="Delete list"
           >
-            ✕
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="h-3.5 w-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M2.5 4h11M6.5 4V2.75h3V4M4 4l.6 9.25h6.8L12 4M6.75 6.5v4.5M9.25 6.5v4.5" />
+            </svg>
           </button>
         </div>
       </div>
@@ -182,6 +199,18 @@ export function ListColumn({
           </button>
         )}
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={`Delete "${list.title}"?`}
+          message={deleteMessage}
+          confirmLabel={
+            cards.length > 0 ? `Delete list and ${cardCountLabel}` : "Delete list"
+          }
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
     </div>
   );
 }

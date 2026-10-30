@@ -27,6 +27,8 @@ export function CardModal({
     setSaving(true);
     await onSave({
       title: trimmedTitle,
+      // An empty description is passed as undefined here; useBoardData sends
+      // it to Supabase as an explicit null so clearing it actually persists.
       description: description.trim() || undefined,
       priority,
     });
