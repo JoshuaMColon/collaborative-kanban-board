@@ -1,22 +1,22 @@
 import { useEffect, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { Board } from "./components/Board";
+import { CalmBackground } from "./components/CalmBackground";
 import { LatticeLoader } from "./components/LatticeLoader";
 import { useAuth } from "./hooks/useAuth";
 
 type ThemeMode = "light" | "dark";
 
 function getInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
 
   const stored = window.localStorage.getItem("kanban-theme");
   if (stored === "light" || stored === "dark") {
     return stored;
   }
 
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  // The warm light theme is the default; the toggle remembers a choice.
+  return "light";
 }
 
 function App() {
@@ -33,8 +33,9 @@ function App() {
 
   if (!boardId) {
     return (
-      <div className="flex h-screen items-center justify-center bg-ink px-6">
-        <p className="max-w-md text-center font-mono text-sm text-signal-amber">
+      <div className="flex h-screen items-center justify-center px-6">
+        <CalmBackground />
+        <p className="max-w-md rounded-2xl border border-line bg-surface px-5 py-4 text-center text-sm text-text-primary shadow-soft">
           Missing VITE_TEST_BOARD_ID. Add it to .env.local (the board's UUID
           from Supabase).
         </p>
@@ -44,7 +45,8 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-ink text-text-muted">
+      <div className="flex h-screen items-center justify-center text-accent">
+        <CalmBackground />
         <LatticeLoader
           label="Loading session"
           pattern="orbit"

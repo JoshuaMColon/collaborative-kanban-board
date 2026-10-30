@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { CardTicket } from "./CardTicket";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { EmptyColumnArt } from "./Illustrations";
 
 export function ListColumn({
   list,
@@ -21,8 +22,8 @@ export function ListColumn({
   onOpenCard,
   onAddCard,
   onDeleteList,
-  electricCardIds,
-  theme,
+  newCardIds,
+  celebratingCardId,
 }: {
   list: BoardList;
   cards: BoardCard[];
@@ -31,8 +32,8 @@ export function ListColumn({
   onOpenCard: (card: BoardCard) => void;
   onAddCard: (listId: string, title: string) => Promise<void>;
   onDeleteList: (listId: string) => Promise<void>;
-  electricCardIds: ReadonlySet<string>;
-  theme: "light" | "dark";
+  newCardIds: ReadonlySet<string>;
+  celebratingCardId: string | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: list.id,
@@ -72,19 +73,25 @@ export function ListColumn({
   }
 
   return (
-    <div className="group/list flex w-full shrink-0 flex-col lg:w-72">
-      <div className="mb-2 flex items-center justify-between px-1">
-        <h2 className="min-w-0 truncate font-display text-sm font-semibold text-text-secondary">
+    <section
+      aria-label={list.title}
+      className="group/list flex w-full shrink-0 flex-col rounded-2xl border border-line/70 bg-surface-2/80 p-2.5 shadow-soft backdrop-blur-sm lg:w-72"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2 px-1.5 pt-0.5">
+        <h2 className="min-w-0 truncate font-display text-[15px] font-bold text-text-primary">
           {list.title}
         </h2>
-        <div className="flex items-center gap-1.5">
-          <span className="rounded-sm bg-ink-surface px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
+        <div className="flex items-center gap-1">
+          <span
+            className="min-w-[1.5rem] rounded-full bg-surface px-2 py-0.5 text-center text-[11px] font-semibold tabular-nums text-text-secondary ring-1 ring-inset ring-line"
+            aria-label={cardCountLabel}
+          >
             {cards.length}
           </span>
           <button
             type="button"
             onClick={() => setConfirmingDelete(true)}
-            className="rounded-sm p-1 text-text-muted transition hover:bg-signal-amber/10 hover:text-signal-amber focus-visible:opacity-100 lg:opacity-0 lg:group-hover/list:opacity-100 lg:group-focus-within/list:opacity-100"
+            className="rounded-lg p-1.5 text-text-muted transition hover:bg-accent/10 hover:text-accent focus-visible:opacity-100 lg:opacity-0 lg:group-hover/list:opacity-100 lg:group-focus-within/list:opacity-100"
             aria-label={`Delete list "${list.title}"`}
             title="Delete list"
           >
@@ -106,10 +113,8 @@ export function ListColumn({
 
       <div
         ref={setNodeRef}
-        className={`group flex min-h-[120px] flex-1 flex-col gap-2 rounded-lg border border-dashed p-2 transition-colors ${
-          isOver
-            ? "border-signal-amber/60 bg-signal-amber/5 shadow-inner"
-            : "border-ink-border/70 bg-ink-surface/70"
+        className={`flex min-h-[120px] flex-1 flex-col gap-2.5 rounded-xl p-1 transition-colors duration-200 ${
+          isOver ? "bg-accent/[0.07] ring-2 ring-inset ring-accent/30" : ""
         }`}
       >
         <SortableContext
@@ -135,22 +140,32 @@ export function ListColumn({
                 }
                 viewers={viewers}
                 onOpen={onOpenCard}
-                isNew={electricCardIds.has(card.id)}
-                electricColor={theme === "dark" ? "#ff3030" : "#7df9ff"}
+                isNew={newCardIds.has(card.id)}
+                celebrate={celebratingCardId === card.id}
               />
             );
           })}
         </SortableContext>
 
         {cards.length === 0 && !isAdding && (
-          <p className="px-1 py-4 text-center font-mono text-[11px] text-text-muted">
-            Nothing staged here.
-          </p>
+          <div className="flex flex-col items-center px-2 py-5 text-center">
+            <EmptyColumnArt className="h-12 w-16" />
+            <p className="mt-2 font-display text-sm font-semibold text-text-secondary">
+              Nothing here yet
+            </p>
+            <p className="mt-0.5 text-xs text-text-muted">
+              Drop a card here or add a new one.
+            </p>
+          </div>
         )}
 
         {isAdding ? (
-          <div className="rounded-md border border-ink-border bg-ink p-2">
+          <div className="animate-fadeUp rounded-xl border border-line bg-surface p-2.5 shadow-soft focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/25">
+            <label className="sr-only" htmlFor={`new-card-${list.id}`}>
+              New card title
+            </label>
             <textarea
+              id={`new-card-${list.id}`}
               autoFocus
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}
@@ -164,7 +179,7 @@ export function ListColumn({
                   setDraftTitle("");
                 }
               }}
-              placeholder="Card title…"
+              placeholder="What needs doing?"
               rows={2}
               className="w-full resize-none border-none bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
             />
@@ -173,9 +188,9 @@ export function ListColumn({
                 type="button"
                 onClick={submitNewCard}
                 disabled={submitting || !draftTitle.trim()}
-                className="rounded-sm bg-signal-amber px-2.5 py-1 font-mono text-[11px] font-semibold text-ink disabled:opacity-50"
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg shadow-soft transition hover:bg-accent/90 disabled:opacity-50"
               >
-                Add
+                Add card
               </button>
               <button
                 type="button"
@@ -183,7 +198,7 @@ export function ListColumn({
                   setIsAdding(false);
                   setDraftTitle("");
                 }}
-                className="rounded-sm px-2.5 py-1 font-mono text-[11px] text-text-muted hover:text-text-primary"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary transition hover:bg-surface-2 hover:text-text-primary"
               >
                 Cancel
               </button>
@@ -193,9 +208,10 @@ export function ListColumn({
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="rounded-md border border-dashed border-ink-border/70 px-2 py-2 text-left font-mono text-[11px] text-text-muted transition hover:border-signal-amber/40 hover:text-signal-amber"
+            className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-[13px] font-medium text-text-secondary transition hover:bg-surface hover:text-accent hover:shadow-soft"
           >
-            + Add card
+            <span aria-hidden="true" className="text-base leading-none">+</span>
+            Add a card
           </button>
         )}
       </div>
@@ -211,6 +227,6 @@ export function ListColumn({
           onCancel={() => setConfirmingDelete(false)}
         />
       )}
-    </div>
+    </section>
   );
 }

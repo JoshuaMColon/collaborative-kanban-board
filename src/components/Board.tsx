@@ -1,6 +1,7 @@
 import {
   DndContext,
   DragOverlay,
+  defaultDropAnimationSideEffects,
   getFirstCollision,
   PointerSensor,
   pointerWithin,
@@ -11,11 +12,10 @@ import {
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type DropAnimation,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -23,11 +23,14 @@ import {
   useState,
 } from "react";
 import { useBoardData } from "../hooks/useBoardData";
+import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { usePresence } from "../hooks/usePresence";
 import { identityFor } from "../lib/identity";
 import type { BoardCard, Collaborator } from "../types";
 import { CardModal } from "./CardModal";
-import { CardTicket } from "./CardTicket";
+import { CalmBackground } from "./CalmBackground";
+import { CardDragPreview } from "./CardTicket";
+import { EmptyBoardArt } from "./Illustrations";
 import { LatticeLoader } from "./LatticeLoader";
 import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
@@ -37,9 +40,26 @@ const ORDER_GAP = 1024; // spacing between fractional order values
 // of inserting yet another midpoint.
 const MIN_ORDER_GAP = 0.001;
 const ACTION_ERROR_TIMEOUT_MS = 7000;
-const MoltenMetal = lazy(() =>
-  import("./MoltenMetal").then((module) => ({ default: module.MoltenMetal })),
-);
+// How long a freshly added card keeps its soft highlight.
+const NEW_CARD_HIGHLIGHT_MS = 2000;
+// How long the little "done" check + confetti stays on a card.
+const CELEBRATE_MS = 1400;
+// Lists whose title looks like a finish line get a tiny celebration.
+const DONE_LIST_PATTERN = /\b(done|complete(d)?|finished|shipped)\b/i;
+
+// The dragged card glides into its slot and the lifted tilt eases away.
+const DROP_ANIMATION: DropAnimation = {
+  duration: 220,
+  easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+  keyframes: ({ transform }) => [
+    { transform: `translate3d(${transform.initial.x}px, ${transform.initial.y}px, 0)` },
+    { transform: `translate3d(${transform.final.x}px, ${transform.final.y}px, 0)` },
+  ],
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: { active: { opacity: "0.6" } },
+    className: { dragOverlay: "is-settling" },
+  }),
+};
 
 // Prefers whatever the pointer is literally inside; if the pointer is
 // momentarily between droppables (e.g. crossing a gap), holds onto the last
@@ -125,9 +145,28 @@ export function Board({
   const [editingCard, setEditingCard] = useState<BoardCard | null>(null);
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
-  const [electricCardIds, setElectricCardIds] = useState<Set<string>>(
-    () => new Set(),
+  const [newCardIds, setNewCardIds] = useState<Set<string>>(() => new Set());
+  const [celebratingCardId, setCelebratingCardId] = useState<string | null>(
+    null,
   );
+  const [announcement, setAnnouncement] = useState("");
+  const reducedMotion = usePrefersReducedMotion();
+
+  // Clear highlight timers if the board unmounts mid-animation.
+  const highlightTimers = useRef<number[]>([]);
+  useEffect(() => {
+    const timers = highlightTimers.current;
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, []);
+
+  useEffect(() => {
+    if (!celebratingCardId) return;
+    const timer = window.setTimeout(
+      () => setCelebratingCardId(null),
+      CELEBRATE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [celebratingCardId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -250,6 +289,16 @@ export function Board({
     const changedList = targetListId !== activeCardData.listId;
     if (!changedList && overIndex === activeIndex) return; // no-op drop
 
+    if (changedList) {
+      const targetTitle = lists.find((l) => l.id === targetListId)?.title ?? "";
+      if (DONE_LIST_PATTERN.test(targetTitle)) {
+        setCelebratingCardId(activeId);
+        setAnnouncement(`Nice! "${activeCardData.title}" moved to ${targetTitle}.`);
+      } else {
+        setAnnouncement(`"${activeCardData.title}" moved to ${targetTitle}.`);
+      }
+    }
+
     // Same semantics @dnd-kit's sortable preview uses, so the card lands
     // exactly where it was shown — in both drag directions.
     const orderedIds = arrayMove(renderedIds, activeIndex, overIndex);
@@ -288,14 +337,22 @@ export function Board({
 
   async function handleAddCard(listId: string, title: string) {
     const cardId = await createCard(listId, title);
-    if (cardId) {
-      setElectricCardIds((prev) => new Set(prev).add(cardId));
-    }
+    if (!cardId) return;
+    setNewCardIds((prev) => new Set(prev).add(cardId));
+    const timer = window.setTimeout(() => {
+      setNewCardIds((prev) => {
+        const next = new Set(prev);
+        next.delete(cardId);
+        return next;
+      });
+    }, NEW_CARD_HIGHLIGHT_MS);
+    highlightTimers.current.push(timer);
   }
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-ink text-text-muted">
+      <div className="flex h-screen items-center justify-center text-accent">
+        <CalmBackground />
         <LatticeLoader
           label="Connecting to board"
           pattern="orbit"
@@ -310,17 +367,21 @@ export function Board({
   // Only a failed initial load blocks the board; write failures use the toast.
   if (error) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-ink px-6">
+      <div className="flex h-screen flex-col items-center justify-center gap-4 px-6">
+        <CalmBackground />
         <p
           role="alert"
-          className="max-w-md text-center font-mono text-sm text-signal-amber"
+          className="max-w-md rounded-2xl border border-line bg-surface px-5 py-4 text-center text-sm text-text-primary shadow-soft"
         >
-          Couldn't load the board: {error}
+          <span className="block font-display text-base font-bold">
+            Hmm, the board didn't load.
+          </span>
+          <span className="mt-1 block text-text-secondary">{error}</span>
         </p>
         <button
           type="button"
           onClick={() => void retry()}
-          className="rounded-sm bg-signal-amber px-4 py-1.5 text-sm font-semibold text-ink transition hover:bg-signal-amber/90"
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg shadow-soft transition hover:bg-accent/90"
         >
           Retry
         </button>
@@ -329,31 +390,8 @@ export function Board({
   }
 
   return (
-    <div className="relative isolate flex h-screen flex-col overflow-hidden bg-ink">
-      {theme === "dark" && (
-        <Suspense fallback={null}>
-          <MoltenMetal
-            color1="#5227FF"
-            color2="#FF9FFC"
-            color3="#FFFFFF"
-            speed={0.35}
-            scale={4}
-            detail={3}
-            glow={1.6}
-            coreSize={0.1}
-            swirl={1}
-            fold={-0.2}
-            blackPoint={0.05}
-            brightness={1.3}
-            colorMode="molten"
-            grain
-            grainIntensity={0.05}
-            mouseInteraction
-            mouseStrength={0.3}
-            opacity={1}
-          />
-        </Suspense>
-      )}
+    <div className="relative isolate flex h-screen flex-col overflow-hidden">
+      <CalmBackground />
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <PresenceBar
@@ -386,15 +424,43 @@ export function Board({
                   onOpenCard={setEditingCard}
                   onAddCard={handleAddCard}
                   onDeleteList={deleteList}
-                  electricCardIds={electricCardIds}
-                  theme={theme}
+                  newCardIds={newCardIds}
+                  celebratingCardId={celebratingCardId}
                 />
               ))}
 
-            <div className="w-full shrink-0 lg:w-72">
+            {lists.length === 0 && !isAddingList && (
+              <div className="mx-auto mt-10 flex w-full max-w-sm animate-fadeUp flex-col items-center rounded-3xl border border-line bg-surface/90 px-8 py-10 text-center shadow-soft backdrop-blur-sm">
+                <EmptyBoardArt className="h-28 w-40" />
+                <h2 className="mt-4 font-display text-xl font-extrabold text-text-primary">
+                  A fresh, calm board
+                </h2>
+                <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">
+                  Start with a few lists like To do, Doing and Done, then add
+                  cards as ideas come up.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsAddingList(true)}
+                  className="mt-5 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-fg shadow-soft transition hover:bg-accent/90"
+                >
+                  Add your first list
+                </button>
+              </div>
+            )}
+
+            <div
+              className={`w-full shrink-0 lg:w-72 ${
+                lists.length === 0 && !isAddingList ? "hidden" : ""
+              }`}
+            >
               {isAddingList ? (
-                <div className="rounded-lg border border-ink-border bg-ink-surface p-2">
+                <div className="animate-fadeUp rounded-2xl border border-line bg-surface p-3 shadow-soft focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/25">
+                  <label className="sr-only" htmlFor="new-list-title">
+                    New list title
+                  </label>
                   <input
+                    id="new-list-title"
                     autoFocus
                     value={newListTitle}
                     onChange={(e) => setNewListTitle(e.target.value)}
@@ -408,7 +474,7 @@ export function Board({
                         setNewListTitle("");
                       }
                     }}
-                    placeholder="List title…"
+                    placeholder="Name this list…"
                     className="w-full border-none bg-transparent font-display text-sm font-semibold text-text-primary outline-none placeholder:text-text-muted"
                   />
                   <div className="mt-2 flex gap-2">
@@ -416,7 +482,7 @@ export function Board({
                       type="button"
                       onClick={submitNewList}
                       disabled={!newListTitle.trim()}
-                      className="rounded-sm bg-signal-amber px-2.5 py-1 font-mono text-[11px] font-semibold text-ink disabled:opacity-50"
+                      className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg shadow-soft transition hover:bg-accent/90 disabled:opacity-50"
                     >
                       Add list
                     </button>
@@ -426,7 +492,7 @@ export function Board({
                         setIsAddingList(false);
                         setNewListTitle("");
                       }}
-                      className="rounded-sm px-2.5 py-1 font-mono text-[11px] text-text-muted hover:text-text-primary"
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-text-secondary transition hover:bg-surface-2 hover:text-text-primary"
                     >
                       Cancel
                     </button>
@@ -436,18 +502,25 @@ export function Board({
                 <button
                   type="button"
                   onClick={() => setIsAddingList(true)}
-                  className="w-full rounded-lg border border-dashed border-ink-border/70 px-3 py-3 text-left font-mono text-[11px] text-text-muted transition hover:border-signal-amber/40 hover:text-signal-amber"
+                  className="w-full rounded-2xl border-2 border-dashed border-line-strong/70 bg-surface/40 px-4 py-3.5 text-left text-sm font-semibold text-text-secondary backdrop-blur-sm transition hover:border-accent/50 hover:bg-surface/80 hover:text-accent"
                 >
-                  + Add list
+                  + Add another list
                 </button>
               )}
             </div>
           </div>
 
-          <DragOverlay>
+          <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
             {activeCard ? (
               <div className="w-72">
-                <CardTicket card={activeCard} viewers={[]} />
+                <CardDragPreview
+                  card={activeCard}
+                  assignee={
+                    activeCard.assigneeId
+                      ? collaboratorsById.get(activeCard.assigneeId)
+                      : undefined
+                  }
+                />
               </div>
             ) : null}
           </DragOverlay>
@@ -456,24 +529,28 @@ export function Board({
         {actionError && (
           <div
             role="alert"
-            className="fixed bottom-4 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-start gap-3 rounded-lg border border-signal-amber/40 bg-ink-surface px-4 py-3 shadow-xl"
+            className="fixed bottom-5 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 animate-fadeUp items-start gap-3 rounded-2xl border border-line border-l-4 border-l-accent bg-surface px-4 py-3 shadow-pop"
           >
             <p className="flex-1 text-sm text-text-primary">
               {actionError}
-              <span className="mt-0.5 block font-mono text-[11px] text-text-muted">
+              <span className="mt-0.5 block text-xs text-text-muted">
                 The board was refreshed to match the server.
               </span>
             </p>
             <button
               type="button"
               onClick={dismissActionError}
-              className="rounded-sm px-1 text-text-muted transition hover:text-text-primary"
+              className="rounded-lg px-1.5 py-0.5 text-text-muted transition hover:bg-surface-2 hover:text-text-primary"
               aria-label="Dismiss message"
             >
               ✕
             </button>
           </div>
         )}
+
+        <p className="sr-only" aria-live="polite">
+          {announcement}
+        </p>
 
         {editingCard && (
           <CardModal

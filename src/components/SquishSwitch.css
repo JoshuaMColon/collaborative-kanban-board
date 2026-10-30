@@ -34,7 +34,7 @@
 }
 
 .squish-switch:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid rgb(var(--accent));
   outline-offset: 4px;
   border-radius: var(--ss-r);
 }
@@ -85,7 +85,7 @@
 
 .squish-switch__label {
   cursor: pointer;
-  color: var(--text-primary);
+  color: rgb(var(--text-primary));
   font-size: 0.875rem;
   font-weight: 500;
   user-select: none;
