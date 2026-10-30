@@ -1,4 +1,4 @@
-import type { Collaborator } from "../types";
+import type { Collaborator, Profile } from "../types";
 
 // Soft pastels; avatars render dark text on these (all >= 7:1 contrast).
 const PALETTE = ["#F4A582", "#8FD1B0", "#9DBBF2", "#E8A0BF", "#E9C46A"];
@@ -49,3 +49,28 @@ export function identityFor(userId: string, email?: string | null): Collaborator
     color,
   };
 }
+
+export function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0] ?? "?").slice(0, 2).toUpperCase();
+}
+
+/** Identity for someone with a profile row (real display name + avatar). */
+export function identityFromProfile(profile: Profile): Collaborator {
+  const base = identityFor(profile.id);
+  return {
+    ...base,
+    name: profile.displayName,
+    initials: initialsFromName(profile.displayName),
+    avatarUrl: profile.avatarUrl,
+  };
+}
+
+/** Placeholder for seeded comments / deleted accounts (author_id is null). */
+export const TEAM_IDENTITY: Collaborator = {
+  id: "kanban-team",
+  name: "Kanban team",
+  initials: "KT",
+  color: "#E9C46A",
+};

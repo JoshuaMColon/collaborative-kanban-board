@@ -58,9 +58,41 @@ export function useAuth() {
     return true;
   }
 
+  // Demo mode: a throwaway anonymous session that can only reach the seeded
+  // demo board (enforced by RLS on the is_anonymous JWT claim).
+  async function signInAsGuest() {
+    setError(null);
+    const { error: anonError } = await supabase.auth.signInAnonymously();
+    if (anonError) {
+      const disabled =
+        anonError.code === "anonymous_provider_disabled" ||
+        /anonymous sign-ins are disabled/i.test(anonError.message);
+      setError(
+        disabled
+          ? "The demo isn't switched on yet. Please sign up or check back soon."
+          : anonError.status === 429
+            ? "Lots of people are trying the demo right now. Please try again in a few minutes."
+            : anonError.message,
+      );
+      return false;
+    }
+    return true;
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
   }
 
-  return { session, loading, error, signIn, signUp, signOut };
+  const isAnonymous = Boolean(session?.user?.is_anonymous);
+
+  return {
+    session,
+    loading,
+    error,
+    isAnonymous,
+    signIn,
+    signUp,
+    signInAsGuest,
+    signOut,
+  };
 }

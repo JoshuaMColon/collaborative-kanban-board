@@ -5,7 +5,9 @@ import type { BoardCard, BoardList, CardPriority } from "../types";
 
 const ORDER_GAP = 1024;
 
-type CardUpdates = Partial<Pick<BoardCard, "title" | "description" | "priority">>;
+export type CardUpdates = Partial<
+  Pick<BoardCard, "title" | "description" | "priority" | "assigneeId" | "dueDate">
+>;
 
 interface UseBoardDataResult {
   boardTitle: string | null;
@@ -338,11 +340,20 @@ export function useBoardData(
         title?: string;
         description?: string | null;
         priority?: CardPriority;
+        assignee_id?: string | null;
+        due_date?: string | null;
       } = {};
       if (updates.title !== undefined) dbUpdates.title = updates.title;
       if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
       if ("description" in updates) {
         dbUpdates.description = updates.description ?? null;
+      }
+      // Same for unassigning / clearing the due date.
+      if ("assigneeId" in updates) {
+        dbUpdates.assignee_id = updates.assigneeId ?? null;
+      }
+      if ("dueDate" in updates) {
+        dbUpdates.due_date = updates.dueDate ?? null;
       }
 
       const { data, error: updateError } = await supabase

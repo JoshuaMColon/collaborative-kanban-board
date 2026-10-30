@@ -5,13 +5,46 @@ export interface Collaborator {
   name: string;
   initials: string;
   color: string; // hex, used for avatar ring + presence dot
+  /** Public Storage URL of the user's avatar, if they uploaded one. */
+  avatarUrl?: string | null;
+}
+
+/** Row from public.profiles (one per auth user, created on signup). */
+export interface Profile {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
 }
 
 export interface CardComment {
   id: string;
-  authorId: string;
+  cardId: string;
+  /** null for seeded demo comments or a deleted account. */
+  authorId: string | null;
   body: string;
   createdAt: string; // ISO timestamp
+  updatedAt: string;
+}
+
+export type LabelColor =
+  | "terracotta"
+  | "amber"
+  | "sage"
+  | "teal"
+  | "sky"
+  | "plum"
+  | "rose"
+  | "slate";
+
+export interface BoardLabel {
+  id: string;
+  name: string;
+  color: LabelColor;
+}
+
+export interface CardLabelLink {
+  cardId: string;
+  labelId: string;
 }
 
 export interface BoardCard {
@@ -21,9 +54,10 @@ export interface BoardCard {
   description?: string;
   priority: CardPriority;
   assigneeId?: string;
+  /** Calendar date, "YYYY-MM-DD" (no time zone). */
+  dueDate?: string;
   listId: string;
   order: number;
-  comments: CardComment[];
   updatedAt: string;
 }
 

@@ -1,8 +1,13 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import type { Collaborator, PresenceEntry } from "../types";
+import type { BoardLabel, Collaborator, PresenceEntry } from "../types";
+import { EMPTY_FILTER, isFilterActive, type BoardFilter } from "../lib/filters";
+import { Avatar } from "./Avatar";
 import { PresenceAvatar } from "./PresenceAvatar";
 import { LazyBlurText as BlurText } from "./reactbits/LazyBlurText";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
+
+const FILTER_FIELD =
+  "rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-text-primary outline-none transition placeholder:text-text-muted hover:border-line-strong focus:border-accent/60 focus:ring-2 focus:ring-accent/25";
 
 const SquishSwitch = lazy(() =>
   import("./SquishSwitch").then((module) => ({
@@ -18,6 +23,15 @@ export function PresenceBar({
   onToggleTheme,
   onRenameBoard,
   onSignOut,
+  me,
+  onOpenProfile,
+  isDemo,
+  onCreateAccount,
+  filter,
+  onFilterChange,
+  labels,
+  members,
+  hiddenCount,
 }: {
   boardTitle: string;
   collaborators: Collaborator[];
@@ -26,7 +40,18 @@ export function PresenceBar({
   onToggleTheme: () => void;
   onRenameBoard: (title: string) => Promise<void>;
   onSignOut: () => Promise<void>;
+  me: Collaborator;
+  onOpenProfile: () => void;
+  isDemo: boolean;
+  onCreateAccount: () => void;
+  filter: BoardFilter;
+  onFilterChange: (filter: BoardFilter) => void;
+  labels: BoardLabel[];
+  members: Collaborator[];
+  /** Cards hidden by the current filter. */
+  hiddenCount: number;
 }) {
+  const filtering = isFilterActive(filter);
   const activeIds = new Set(presence.map((p) => p.collaboratorId));
   const [draftTitle, setDraftTitle] = useState(boardTitle);
   const reducedMotion = usePrefersReducedMotion();
@@ -62,6 +87,11 @@ export function PresenceBar({
               className="inline-block h-2 w-2 rounded-full bg-accent"
             />
             Collaborative Kanban Board
+            {isDemo && (
+              <span className="ml-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent-fg">
+                Demo
+              </span>
+            )}
           </p>
           <div className="relative mt-0.5 w-full max-w-xl">
           {showIntro && (
@@ -85,6 +115,7 @@ export function PresenceBar({
           )}
           <input
             aria-label="Board title"
+            maxLength={120}
             onFocus={() => setIntroDone(true)}
             value={draftTitle}
             onChange={(event) => setDraftTitle(event.target.value)}
@@ -159,13 +190,123 @@ export function PresenceBar({
 
           <button
             type="button"
+            onClick={onOpenProfile}
+            aria-label={`Your profile (${me.name})`}
+            title="Your profile"
+            className="flex items-center gap-2 rounded-full border border-line bg-surface py-1 pl-1 pr-3 text-xs font-semibold text-text-secondary shadow-soft transition hover:border-accent/40 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            <Avatar collaborator={me} size="sm" decorative />
+            <span className="max-w-[8rem] truncate">{me.name}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => void onSignOut()}
             className="rounded-full border border-line bg-surface px-3.5 py-2 text-xs font-semibold text-text-secondary shadow-soft transition hover:border-accent/40 hover:text-accent"
           >
-            Sign out
+            {isDemo ? "Leave demo" : "Sign out"}
           </button>
         </div>
       </div>
+
+      <div
+        role="search"
+        aria-label="Filter cards"
+        className="mt-3 flex flex-wrap items-center gap-2"
+      >
+        <label className="relative min-w-[12rem] flex-1 sm:max-w-xs">
+          <span className="sr-only">Search cards</span>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          >
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="m10.5 10.5 3 3" />
+          </svg>
+          <input
+            type="search"
+            value={filter.text}
+            maxLength={100}
+            onChange={(e) => onFilterChange({ ...filter, text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && filter.text) {
+                e.preventDefault();
+                onFilterChange({ ...filter, text: "" });
+              }
+            }}
+            placeholder="Search cards…"
+            className={`${FILTER_FIELD} w-full pl-8`}
+          />
+        </label>
+        <label>
+          <span className="sr-only">Filter by label</span>
+          <select
+            value={filter.labelId}
+            onChange={(e) => onFilterChange({ ...filter, labelId: e.target.value })}
+            className={FILTER_FIELD}
+          >
+            <option value="">All labels</option>
+            {labels.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Filter by assignee</span>
+          <select
+            value={filter.assigneeId}
+            onChange={(e) => onFilterChange({ ...filter, assigneeId: e.target.value })}
+            className={FILTER_FIELD}
+          >
+            <option value="">Anyone</option>
+            <option value="none">Unassigned</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id === me.id ? `${m.name} (you)` : m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {filtering && (
+          <>
+            <button
+              type="button"
+              onClick={() => onFilterChange(EMPTY_FILTER)}
+              className="rounded-full px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              Clear filters
+            </button>
+            <p className="text-xs text-text-muted" role="status">
+              {hiddenCount} card{hiddenCount === 1 ? "" : "s"} hidden · dragging is paused while filtering
+            </p>
+          </>
+        )}
+      </div>
+
+      {isDemo && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/30 bg-accent/10 px-3.5 py-2.5 text-sm text-text-primary">
+          <p className="flex-1">
+            <span className="font-semibold">You're exploring a shared demo board.</span>{" "}
+            <span className="text-text-secondary">
+              Anyone trying the demo sees your changes, and it resets every hour.
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={onCreateAccount}
+            className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-fg shadow-soft transition hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            Create a free account
+          </button>
+        </div>
+      )}
     </header>
   );
 }

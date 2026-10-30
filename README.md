@@ -16,10 +16,17 @@ Many Kanban demos stop at local drag-and-drop state. This project explores the h
 ## Highlights
 
 - Email/password sign-up and sign-in through Supabase Auth
+- **Try the demo:** one click signs visitors in anonymously to a shared, seeded demo board that resets every hour (see [Demo mode](#demo-mode))
+- **Profiles:** display names and avatar photos (Supabase Storage), with initials as a fallback, used for presence, card assignees and comments
+- **Assignees:** pick anyone on the board (or unassign) from the card modal; people join a board's member list when they open it
+- **Comments:** realtime comment threads on every card; authors can edit or delete their own
+- **Labels:** colored, board-wide labels you create, assign and remove in the card modal, shown as chips on cards
+- **Due dates:** a date picker on each card; chips turn amber when due within two days and red when overdue
+- **Filter and search:** narrow the board by text, label or assignee from the header (drag pauses while filtering)
 - Realtime synchronization for card and list changes across connected clients
 - Supabase Presence indicators showing who is currently online
-- Drag-and-drop card movement within and between lists with fractional ordering
-- Create, edit, and delete cards, including descriptions and priority levels
+- Drag-and-drop card movement within and between lists with gap-based ordering
+- Create, edit, and delete cards, including descriptions, priority, assignee, labels and due date
 - Create and delete lists, with confirmation before destructive actions
 - Inline board title editing with persistence
 - Optimistic UI updates with refetch recovery when a database write fails
@@ -37,13 +44,13 @@ Many Kanban demos stop at local drag-and-drop state. This project explores the h
 | Backend     | Supabase Auth, Postgres, Realtime, and Presence            |
 | State model | Focused hooks for authentication, board data, and presence |
 
-The board uses a stable collision-detection strategy so a dragged card does not flicker between drop targets while crossing gaps. Card ordering uses numeric gaps and midpoint values, which lets the client insert cards without immediately renumbering an entire list. Database rows are mapped into frontend models through a dedicated mapper layer, keeping persistence details out of components.
+The board uses a stable collision-detection strategy so a dragged card does not flicker between drop targets while crossing gaps. Card ordering uses integer gaps and whole-number midpoints, which lets the client insert cards without renumbering a list until two neighbours run out of room. Database rows are mapped into frontend models through a dedicated mapper layer, keeping persistence details out of components.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18 or newer
+- Node.js 20 or newer (22 recommended; `@supabase/supabase-js` warns on older versions)
 - A Supabase project with Auth enabled
 - The database schema from `supabase/migrations/` applied (see [Database](#database-supabase)), plus a row in `boards`
 
@@ -75,15 +82,32 @@ npm run preview  # Preview the production build locally
 
 The app intentionally fails with a visible setup message when the Supabase variables or board ID are missing. This makes configuration problems easy to diagnose during local development.
 
+### Demo mode
+
+The sign-in screen has a **Try the demo** button that calls `supabase.auth.signInAnonymously()` and lands on the seeded demo board, with a visible **Demo** badge and a "Create a free account" prompt.
+
+**One-time setup:** anonymous sign-ins are off by default. Turn them on in the Supabase dashboard under **Authentication → Sign In / Providers → Allow anonymous sign-ins**. Until then the button shows a friendly "the demo isn't switched on yet" message. Supabase rate-limits anonymous sign-ins per IP (30 an hour by default); turning on **CAPTCHA protection** (Cloudflare Turnstile) under **Authentication → Attack Protection** is recommended for a public demo.
+
+How the demo is kept safe:
+
+- Anonymous users get the `authenticated` role but carry an `is_anonymous` JWT claim. RLS only lets them see and edit boards flagged `is_demo`; real boards and real people's profiles are invisible to them. They can't create boards or upload avatars.
+- A `pg_cron` job (`reset-demo-board`, every hour on the hour) wipes and re-seeds the demo board's lists, cards, labels and comments.
+- Triggers cap the demo board at 60 cards, 10 lists, 16 labels and 200 comments, and check constraints limit text lengths on every board.
+- A second job (`cleanup-anonymous-users`, daily) deletes anonymous users older than a day.
+
 ## Database (Supabase)
 
 The schema lives in [`supabase/migrations/`](supabase/migrations/) and is applied with the Supabase CLI (`supabase db push`).
 
-- **Schema:** `boards` (with an `owner_id`), `board_members` (reserved for future multi-board invites), `lists`, and `cards`. Deleting a board cascades to its lists and cards, and deleting a list cascades to its cards. Indexes cover every foreign key and the `(board_id, "order")` / `(list_id, "order")` lookups the app runs.
-- **Row-level security:** RLS is on for every table and only signed-in (`authenticated`) users can read or write; `anon` has no table privileges, and `TRUNCATE` is revoked. All signed-in users share the board model (no membership checks yet), but **deleting a board is owner-only**. Users can only see or remove their own `board_members` rows.
+- **Schema:** `boards` (with an `owner_id`), `board_members` (who has opened a board), `lists`, and `cards`. Deleting a board cascades to its lists and cards, and deleting a list cascades to its cards. Indexes cover every foreign key and the `(board_id, "order")` / `(list_id, "order")` lookups the app runs.
+- **Row-level security:** RLS is on for every table and only signed-in (`authenticated`) users can read or write; `anon` has no table privileges, and `TRUNCATE` is revoked. All signed-in users share the board model (no membership checks yet), but **deleting a board is owner-only**. Opening a board adds you to its `board_members` (that list powers the assignee picker); you can see the other members of boards you belong to, and only add or remove yourself.
 - **Realtime:** `boards`, `lists`, and `cards` are in the `supabase_realtime` publication with `REPLICA IDENTITY FULL`, so update and delete events carry the full old row to every subscriber.
 - **Server-side card codes:** a `BEFORE INSERT` trigger assigns the next `MAN-###` code from a sequence whenever `code` is null or blank, and `UNIQUE (board_id, code)` prevents duplicates. The client inserts cards without a code and reads the created row back.
 - **Timestamps:** a `BEFORE UPDATE` trigger keeps `cards.updated_at` current.
+- **Profiles:** `profiles` (one row per auth user: `display_name`, `avatar_url`) is created by an `auth.users` trigger on sign-up. You can read profiles of people you share a board with; you can only edit your own. Avatars live in the public `avatars` bucket (1 MB, PNG/JPEG/WebP/GIF), and each user can only write to their own `<user id>/` folder.
+- **Card details:** `cards.due_date` (a plain date), `card_comments` (author-only edit/delete), `board_labels` (8 warm colors, unique names per board) and `card_labels` (card ↔ label links). A trigger fills in `board_id` on comments and label links from the card, so RLS can check board access cheaply.
+- **Demo access:** `boards.is_demo` plus helper functions in a non-exposed `private` schema (`private.can_access_board()` and friends), used by every board-scoped policy.
+- **Realtime (new tables):** `profiles`, `board_members`, `card_comments`, `board_labels` and `card_labels` are also in the `supabase_realtime` publication.
 
 **Existing project:** `20260710000000_baseline_schema.sql` documents the tables that were originally created in the dashboard. It is idempotent but was never run as a migration, so on the existing hosted project mark it as applied before pushing:
 
@@ -99,8 +123,8 @@ On a fresh project, `supabase db push` applies the baseline and every later migr
 src/
   components/  Board, cards, lists, auth, and presence UI
     reactbits/ Components adapted from React Bits (see Credits)
-  hooks/       Auth, board data, and realtime presence behavior
-  lib/         Supabase client, identity helpers, and row mappers
+  hooks/       Auth, board data, board metadata (members, profiles, labels, comments), presence
+  lib/         Supabase client, identity, row mappers, dates, labels and filters
   data/        Sample domain data used during early UI development
   types.ts     Shared board, card, list, and presence models
 supabase/
@@ -109,9 +133,9 @@ supabase/
 
 ## Current Scope
 
-The core board workflow is implemented and connected to Supabase. Comments and profile records are represented in the TypeScript model but are not persisted in the current database schema. Assignee identity is currently derived deterministically from a user's ID until a profiles table is added.
+The board, profiles, comments, labels, due dates and demo mode are all connected to Supabase. Everyone signed in with a real account still shares the same board model; there are no per-board invitations yet.
 
-Potential next iterations include persisted comments, profile management, board membership and invitation flows, richer card-level presence, automated tests for ordering and realtime reconciliation, and CI checks for type safety and linting.
+Potential next iterations include board invitations and roles, multiple boards per user, @mentions and notifications for comments, automated tests for ordering and realtime reconciliation, and CI checks for type safety and linting.
 
 ## What This Project Shows
 

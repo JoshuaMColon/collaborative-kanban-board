@@ -3,10 +3,16 @@ import { CSS } from "@dnd-kit/utilities";
 import type { BoardCard, Collaborator, PresenceEntry } from "../types";
 import { Celebration } from "./Celebration";
 import { PresenceAvatar } from "./PresenceAvatar";
+import { Avatar } from "./Avatar";
+import { useCardDecorations } from "../lib/boardContext";
+import { describeDue, dueStatus, formatDue } from "../lib/dates";
+import { labelChipClass } from "../lib/labels";
 import { PRIORITY_META } from "../lib/priority";
 import { PriorityTag } from "./PriorityTag";
 import { CardSpotlightLayers } from "./reactbits/CardSpotlight";
 import { useCardSpotlight } from "./reactbits/useCardSpotlight";
+
+const MAX_CHIPS = 3;
 
 /** Pure visual card, shared by the sortable card and the drag overlay. */
 export function CardFace({
@@ -21,6 +27,15 @@ export function CardFace({
   lifted?: boolean;
 }) {
   const meta = PRIORITY_META[card.priority];
+  const { labelsById, labelIdsByCard, commentCountByCard, doneListIds } =
+    useCardDecorations();
+  const cardLabels = (labelIdsByCard.get(card.id) ?? [])
+    .map((id) => labelsById.get(id))
+    .filter((l): l is NonNullable<typeof l> => Boolean(l));
+  const commentCount = commentCountByCard.get(card.id) ?? 0;
+  const due = card.dueDate
+    ? dueStatus(card.dueDate, doneListIds.has(card.listId))
+    : null;
   return (
     <>
       <span
@@ -45,26 +60,72 @@ export function CardFace({
         </p>
       )}
 
-      {(viewers.length > 0 || assignee) && (
-        <div className="mt-3 flex items-center justify-between">
-          <div className="flex -space-x-1.5">
-            {viewers.map((v) => (
-              <PresenceAvatar
-                key={v.id}
-                collaborator={v}
-                isActive={!lifted}
-                size="sm"
-              />
-            ))}
+      {cardLabels.length > 0 && (
+        <ul className="mt-2.5 flex flex-wrap gap-1" aria-label="Labels">
+          {cardLabels.slice(0, MAX_CHIPS).map((label) => (
+            <li
+              key={label.id}
+              className={`${labelChipClass(label.color)} max-w-[9rem] truncate rounded-full px-2 py-0.5 text-[11px] font-semibold`}
+            >
+              {label.name}
+            </li>
+          ))}
+          {cardLabels.length > MAX_CHIPS && (
+            <li className="rounded-full px-1.5 py-0.5 text-[11px] font-semibold text-text-muted">
+              +{cardLabels.length - MAX_CHIPS}
+              <span className="sr-only"> more labels</span>
+            </li>
+          )}
+        </ul>
+      )}
+
+      {(viewers.length > 0 || assignee || card.dueDate || commentCount > 0) && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {card.dueDate && due && (
+              <span
+                className={`due-chip due-${due} inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums`}
+                title={describeDue(card.dueDate, due)}
+              >
+                <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2.5" y="3.5" width="11" height="10" rx="2" />
+                  <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" />
+                </svg>
+                <span aria-hidden="true">{formatDue(card.dueDate)}</span>
+                <span className="sr-only">{describeDue(card.dueDate, due)}</span>
+              </span>
+            )}
+            {commentCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-text-muted">
+                <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7l-3 2.5v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" />
+                </svg>
+                {commentCount}
+                <span className="sr-only"> comment{commentCount === 1 ? "" : "s"}</span>
+              </span>
+            )}
+            {viewers.length > 0 && (
+              <div className="flex -space-x-1.5">
+                {viewers.map((v) => (
+                  <PresenceAvatar
+                    key={v.id}
+                    collaborator={v}
+                    isActive={!lifted}
+                    size="sm"
+                  />
+                ))}
+              </div>
+            )}
           </div>
           {assignee && (
-            <span
-              className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-[#1c1917] ring-2 ring-surface"
-              style={{ backgroundColor: assignee.color }}
-              title={`Assigned to ${assignee.name}`}
-            >
-              {assignee.initials}
-              <span className="sr-only">, assigned to {assignee.name}</span>
+            <span className="inline-flex" title={`Assigned to ${assignee.name}`}>
+              <Avatar
+                collaborator={assignee}
+                size="card"
+                decorative
+                className="ring-2 ring-surface"
+              />
+              <span className="sr-only">Assigned to {assignee.name}</span>
             </span>
           )}
         </div>
@@ -90,6 +151,7 @@ export function CardTicket({
   /** Shows a small check + confetti after the card lands in a "Done" list. */
   celebrate?: boolean;
 }) {
+  const { dragDisabled } = useCardDecorations();
   const {
     attributes,
     listeners,
@@ -97,7 +159,11 @@ export function CardTicket({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: card.id, data: { type: "card", card } });
+  } = useSortable({
+    id: card.id,
+    data: { type: "card", card },
+    disabled: dragDisabled,
+  });
   // Cursor-following warm glow; off while this card is the drag placeholder.
   const spotlight = useCardSpotlight(isDragging);
 
@@ -127,7 +193,7 @@ export function CardTicket({
         if (e.key === "Enter") onOpen?.(card);
       }}
       aria-label={`${card.title}, ${PRIORITY_META[card.priority].label} priority, ${card.code}`}
-      className={`card-spotlight group relative isolate cursor-grab select-none rounded-xl border bg-surface py-3 pl-4 pr-3 active:cursor-grabbing ${
+      className={`card-spotlight group relative isolate select-none ${dragDisabled ? "cursor-pointer" : "cursor-grab"} rounded-xl border bg-surface py-3 pl-4 pr-3 active:cursor-grabbing ${
         isDragging
           ? "border-dashed border-line-strong bg-surface-2 opacity-60 shadow-none [&>*]:opacity-30"
           : "border-line/80 shadow-soft hover:border-line-strong hover:shadow-soft-hover"
