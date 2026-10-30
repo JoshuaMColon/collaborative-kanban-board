@@ -6,13 +6,18 @@ import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 export function AuthScreen({
   onSignIn,
   onSignUp,
+  onTryDemo,
   error,
+  initialMode = "signin",
 }: {
   onSignIn: (email: string, password: string) => Promise<boolean>;
   onSignUp: (email: string, password: string) => Promise<boolean>;
+  onTryDemo: () => Promise<boolean>;
   error: string | null;
+  initialMode?: "signin" | "signup";
 }) {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup">(initialMode);
+  const [startingDemo, setStartingDemo] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -132,8 +137,32 @@ export function AuthScreen({
           disabled={submitting}
           className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg shadow-soft transition hover:bg-accent/90 disabled:opacity-50"
         >
-          {mode === "signin" ? "Sign in" : "Sign up"}
+          {submitting ? "One moment…" : mode === "signin" ? "Sign in" : "Sign up"}
         </button>
+
+        <div className="my-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted" aria-hidden="true">
+          <span className="h-px flex-1 bg-line" />
+          or
+          <span className="h-px flex-1 bg-line" />
+        </div>
+
+        <button
+          type="button"
+          disabled={submitting || startingDemo}
+          onClick={async () => {
+            setStartingDemo(true);
+            setNotice(null);
+            await onTryDemo();
+            setStartingDemo(false);
+          }}
+          className="group flex w-full items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-semibold text-text-primary transition hover:border-accent/70 hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
+        >
+          <span aria-hidden="true" className="text-accent transition group-hover:scale-110">✦</span>
+          {startingDemo ? "Opening the demo…" : "Try the demo"}
+        </button>
+        <p className="mt-1.5 text-center text-[11px] text-text-muted">
+          No account needed. A shared sample board that resets every hour.
+        </p>
 
         <button
           type="button"

@@ -23,11 +23,15 @@ import {
   useState,
 } from "react";
 import { useBoardData } from "../hooks/useBoardData";
+import { useBoardMeta } from "../hooks/useBoardMeta";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { usePresence } from "../hooks/usePresence";
 import { markDragEnd, markDragStart } from "../lib/dragState";
-import { identityFor } from "../lib/identity";
+import { CardDecorationsContext, type CardDecorations } from "../lib/boardContext";
+import { identityFor, identityFromProfile, TEAM_IDENTITY } from "../lib/identity";
+import { EMPTY_FILTER, isFilterActive, matchesFilter, type BoardFilter } from "../lib/filters";
 import type { BoardCard, Collaborator } from "../types";
+import { ProfileDialog } from "./ProfileDialog";
 import { CardModal } from "./CardModal";
 import { CalmBackground } from "./CalmBackground";
 import { CardDragPreview } from "./CardTicket";
@@ -36,10 +40,10 @@ import { LatticeLoader } from "./LatticeLoader";
 import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
 
-const ORDER_GAP = 1024; // spacing between fractional order values
-// When two neighbours get closer than this, renumber the whole list instead
-// of inserting yet another midpoint.
-const MIN_ORDER_GAP = 0.001;
+const ORDER_GAP = 1024; // spacing between integer order values
+// When two neighbours are this close (no whole number fits between them),
+// renumber the whole list instead of inserting another midpoint.
+const MIN_ORDER_GAP = 2;
 const ACTION_ERROR_TIMEOUT_MS = 7000;
 // How long a freshly added card keeps its soft highlight.
 const NEW_CARD_HIGHLIGHT_MS = 2000;
@@ -94,14 +98,19 @@ export function Board({
   onToggleTheme,
   userId,
   userEmail,
+  isDemo,
   onSignOut,
+  onCreateAccount,
 }: {
   boardId: string;
   theme: "light" | "dark";
   onToggleTheme: () => void;
   userId: string;
   userEmail: string | null;
+  /** Anonymous demo session on the shared demo board. */
+  isDemo: boolean;
   onSignOut: () => Promise<void>;
+  onCreateAccount: () => void;
 }) {
   // App only ever renders <Board> once a real session exists (see App.tsx),
   // so board data / presence can always fetch right away.
@@ -127,7 +136,37 @@ export function Board({
     createList,
     deleteList,
   } = useBoardData(boardId, ready);
-  const { presence } = usePresence(boardId, userId, userEmail, ready);
+  const [metaError, setMetaError] = useState<string | null>(null);
+  const assigneeIds = useMemo(
+    () =>
+      Array.from(
+        new Set(cards.map((c) => c.assigneeId).filter((id): id is string => Boolean(id))),
+      ),
+    [cards],
+  );
+  const meta = useBoardMeta({
+    boardId,
+    userId,
+    ready,
+    extraUserIds: assigneeIds,
+    onError: setMetaError,
+  });
+  const myProfile = meta.profiles.get(userId);
+  const { presence } = usePresence(
+    boardId,
+    userId,
+    myProfile?.displayName ?? (isDemo ? null : userEmail),
+    ready,
+  );
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [filter, setFilter] = useState<BoardFilter>(EMPTY_FILTER);
+  const filterActive = isFilterActive(filter);
+
+  useEffect(() => {
+    if (!metaError) return;
+    const timer = window.setTimeout(() => setMetaError(null), ACTION_ERROR_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [metaError]);
 
   // Failed writes show a dismissible toast instead of replacing the board.
   useEffect(() => {
@@ -173,18 +212,72 @@ export function Board({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  // We don't have a profiles table yet, so display identity (initials/color)
-  // is derived deterministically from the user id for anyone we see via
-  // Presence. Swap this for real profile data once that table exists.
+  // Names and avatars come from profiles; presence (or the id itself) is
+  // only a fallback while a profile is loading or hidden by RLS.
   const collaboratorsById = useMemo(() => {
     const map = new Map<string, Collaborator>();
+    for (const profile of meta.profiles.values()) {
+      map.set(profile.id, identityFromProfile(profile));
+    }
     for (const p of presence) {
       if (!map.has(p.collaboratorId)) {
         map.set(p.collaboratorId, identityFor(p.collaboratorId, p.email));
       }
     }
     return map;
-  }, [presence]);
+  }, [presence, meta.profiles]);
+
+  const collaboratorFor = useCallback(
+    (id: string | null): Collaborator =>
+      id ? (collaboratorsById.get(id) ?? identityFor(id)) : TEAM_IDENTITY,
+    [collaboratorsById],
+  );
+
+  const onlineCollaborators = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Collaborator[] = [];
+    for (const p of presence) {
+      if (seen.has(p.collaboratorId)) continue;
+      seen.add(p.collaboratorId);
+      list.push(collaboratorFor(p.collaboratorId));
+    }
+    return list;
+  }, [presence, collaboratorFor]);
+
+  const members = useMemo(
+    () => meta.memberIds.map((id) => collaboratorFor(id)),
+    [meta.memberIds, collaboratorFor],
+  );
+
+  const labelIdsByCard = useMemo(() => {
+    const map = new Map<string, string[]>();
+    const order = new Map(meta.labels.map((l, i) => [l.id, i]));
+    for (const link of meta.cardLabels) {
+      const list = map.get(link.cardId) ?? [];
+      list.push(link.labelId);
+      map.set(link.cardId, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+    }
+    return map;
+  }, [meta.cardLabels, meta.labels]);
+
+  const decorations = useMemo<CardDecorations>(() => {
+    const commentCountByCard = new Map<string, number>();
+    for (const c of meta.comments) {
+      commentCountByCard.set(c.cardId, (commentCountByCard.get(c.cardId) ?? 0) + 1);
+    }
+    return {
+      labelsById: new Map(meta.labels.map((l) => [l.id, l])),
+      labelIdsByCard,
+      commentCountByCard,
+      doneListIds: new Set(
+        lists.filter((l) => DONE_LIST_PATTERN.test(l.title)).map((l) => l.id),
+      ),
+      dragDisabled: filterActive,
+    };
+  }, [meta.comments, meta.labels, labelIdsByCard, lists, filterActive]);
 
   const presenceByCard = useMemo(() => {
     const map = new Map<string, typeof presence>();
@@ -198,11 +291,17 @@ export function Board({
   }, [presence]);
 
   const displayCards = useMemo(() => {
-    if (!dragOverride) return cards;
-    return cards.map((c) =>
+    const visible = filterActive
+      ? cards.filter((c) =>
+          matchesFilter(c, filter, labelIdsByCard.get(c.id) ?? []),
+        )
+      : cards;
+    if (!dragOverride) return visible;
+    return visible.map((c) =>
       c.id === dragOverride.cardId ? { ...c, listId: dragOverride.listId } : c,
     );
-  }, [cards, dragOverride]);
+  }, [cards, dragOverride, filter, filterActive, labelIdsByCard]);
+  const hiddenCount = cards.length - displayCards.length;
 
   const cardsByList = useMemo(() => {
     const map = new Map<string, BoardCard[]>();
@@ -318,13 +417,15 @@ export function Board({
         ? findCard(orderedIds[newIndex + 1])
         : null;
 
+    // cards.order is an INTEGER column, so a midpoint must be a whole number
+    // strictly between its neighbours; when there's no room, renumber.
     if (before && after && after.order - before.order < MIN_ORDER_GAP) {
       await reorderList(targetListId, orderedIds);
       return;
     }
 
     let newOrder: number;
-    if (before && after) newOrder = (before.order + after.order) / 2;
+    if (before && after) newOrder = Math.floor((before.order + after.order) / 2);
     else if (before) newOrder = before.order + ORDER_GAP;
     else if (after) newOrder = after.order - ORDER_GAP;
     else newOrder = 0;
@@ -405,14 +506,24 @@ export function Board({
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <PresenceBar
           boardTitle={boardTitle ?? ""}
-          collaborators={Array.from(collaboratorsById.values())}
+          collaborators={onlineCollaborators}
           presence={presence}
           theme={theme}
           onToggleTheme={onToggleTheme}
           onRenameBoard={updateBoardTitle}
           onSignOut={onSignOut}
+          me={collaboratorFor(userId)}
+          onOpenProfile={() => setProfileOpen(true)}
+          isDemo={isDemo}
+          onCreateAccount={onCreateAccount}
+          filter={filter}
+          onFilterChange={setFilter}
+          labels={meta.labels}
+          members={members}
+          hiddenCount={hiddenCount}
         />
 
+        <CardDecorationsContext.Provider value={decorations}>
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetectionStrategy}
@@ -472,6 +583,7 @@ export function Board({
                   <input
                     id="new-list-title"
                     autoFocus
+                    maxLength={80}
                     value={newListTitle}
                     onChange={(e) => setNewListTitle(e.target.value)}
                     onKeyDown={(e) => {
@@ -535,21 +647,27 @@ export function Board({
             ) : null}
           </DragOverlay>
         </DndContext>
+        </CardDecorationsContext.Provider>
 
-        {actionError && (
+        {(actionError || metaError) && (
           <div
             role="alert"
             className="fixed bottom-5 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 animate-fadeUp items-start gap-3 rounded-2xl border border-line border-l-4 border-l-accent bg-surface px-4 py-3 shadow-pop"
           >
             <p className="flex-1 text-sm text-text-primary">
-              {actionError}
-              <span className="mt-0.5 block text-xs text-text-muted">
-                The board was refreshed to match the server.
-              </span>
+              {actionError ?? metaError}
+              {actionError && (
+                <span className="mt-0.5 block text-xs text-text-muted">
+                  The board was refreshed to match the server.
+                </span>
+              )}
             </p>
             <button
               type="button"
-              onClick={dismissActionError}
+              onClick={() => {
+                if (actionError) dismissActionError();
+                else setMetaError(null);
+              }}
               className="rounded-lg px-1.5 py-0.5 text-text-muted transition hover:bg-surface-2 hover:text-text-primary"
               aria-label="Dismiss message"
             >
@@ -565,9 +683,33 @@ export function Board({
         {editingCard && (
           <CardModal
             card={editingCard}
+            isDoneList={decorations.doneListIds.has(editingCard.listId)}
+            members={members}
+            labels={meta.labels}
+            cardLabelIds={labelIdsByCard.get(editingCard.id) ?? []}
+            comments={meta.comments.filter((c) => c.cardId === editingCard.id)}
+            currentUserId={userId}
+            collaboratorFor={collaboratorFor}
             onClose={() => setEditingCard(null)}
             onSave={(updates) => updateCard(editingCard.id, updates)}
             onDelete={() => deleteCard(editingCard.id)}
+            onToggleLabel={(labelId) => meta.toggleCardLabel(editingCard.id, labelId)}
+            onCreateLabel={meta.createLabel}
+            onAddComment={(body) => meta.addComment(editingCard.id, body)}
+            onEditComment={meta.editComment}
+            onDeleteComment={meta.deleteComment}
+          />
+        )}
+
+        {profileOpen && (
+          <ProfileDialog
+            me={collaboratorFor(userId)}
+            email={isDemo ? undefined : (userEmail ?? undefined)}
+            isDemo={isDemo}
+            onClose={() => setProfileOpen(false)}
+            onSave={meta.updateProfile}
+            onUpload={meta.uploadAvatar}
+            onRemoveAvatarFiles={meta.removeAvatarFiles}
           />
         )}
       </div>

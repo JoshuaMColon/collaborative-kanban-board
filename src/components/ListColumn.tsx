@@ -166,6 +166,7 @@ export function ListColumn({
             </label>
             <textarea
               id={`new-card-${list.id}`}
+              maxLength={200}
               autoFocus
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}

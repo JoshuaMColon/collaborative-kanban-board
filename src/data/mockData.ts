@@ -30,7 +30,6 @@ export const initialBoard: Board = {
       assigneeId: "u2",
       listId: "l2",
       order: 0,
-      comments: [],
       updatedAt: new Date().toISOString(),
     },
     {
@@ -42,7 +41,6 @@ export const initialBoard: Board = {
       assigneeId: "u1",
       listId: "l1",
       order: 0,
-      comments: [],
       updatedAt: new Date().toISOString(),
     },
     {
@@ -54,7 +52,6 @@ export const initialBoard: Board = {
       assigneeId: "u1",
       listId: "l2",
       order: 1,
-      comments: [],
       updatedAt: new Date().toISOString(),
     },
     {
@@ -66,7 +63,6 @@ export const initialBoard: Board = {
       assigneeId: "u3",
       listId: "l3",
       order: 0,
-      comments: [],
       updatedAt: new Date().toISOString(),
     },
     {
@@ -78,7 +74,6 @@ export const initialBoard: Board = {
       assigneeId: "u1",
       listId: "l4",
       order: 0,
-      comments: [],
       updatedAt: new Date().toISOString(),
     },
   ],

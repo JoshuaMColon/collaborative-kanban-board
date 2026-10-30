@@ -1,4 +1,5 @@
 import type { Collaborator } from "../types";
+import { Avatar } from "./Avatar";
 
 export function PresenceAvatar({
   collaborator,
@@ -9,8 +10,6 @@ export function PresenceAvatar({
   isActive?: boolean;
   size?: "sm" | "md";
 }) {
-  const dims = size === "sm" ? "h-6 w-6 text-[10px]" : "h-8 w-8 text-xs";
-
   return (
     <div className="relative inline-flex" title={collaborator.name}>
       {isActive && (
@@ -20,15 +19,11 @@ export function PresenceAvatar({
           aria-hidden="true"
         />
       )}
-      <div
-        className={`relative flex ${dims} items-center justify-center rounded-full border-2 font-bold text-[#1c1917]`}
-        style={{
-          backgroundColor: collaborator.color,
-          borderColor: "rgb(var(--surface))",
-        }}
-      >
-        {collaborator.initials}
-      </div>
+      <Avatar
+        collaborator={collaborator}
+        size={size}
+        className="border-2 [border-color:rgb(var(--surface))]"
+      />
       {isActive && (
         <span
           className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2"
