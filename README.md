@@ -45,8 +45,7 @@ The board uses a stable collision-detection strategy so a dragged card does not 
 
 - Node.js 18 or newer
 - A Supabase project with Auth enabled
-- A board and its `boards`, `lists`, and `cards` tables configured in Supabase
-- Realtime enabled for the `cards` and `lists` tables
+- The database schema from `supabase/migrations/` applied (see [Database](#database-supabase)), plus a row in `boards`
 
 ### Installation
 
@@ -76,6 +75,24 @@ npm run preview  # Preview the production build locally
 
 The app intentionally fails with a visible setup message when the Supabase variables or board ID are missing. This makes configuration problems easy to diagnose during local development.
 
+## Database (Supabase)
+
+The schema lives in [`supabase/migrations/`](supabase/migrations/) and is applied with the Supabase CLI (`supabase db push`).
+
+- **Schema:** `boards` (with an `owner_id`), `board_members` (reserved for future multi-board invites), `lists`, and `cards`. Deleting a board cascades to its lists and cards, and deleting a list cascades to its cards. Indexes cover every foreign key and the `(board_id, "order")` / `(list_id, "order")` lookups the app runs.
+- **Row-level security:** RLS is on for every table and only signed-in (`authenticated`) users can read or write; `anon` has no table privileges, and `TRUNCATE` is revoked. All signed-in users share the board model (no membership checks yet), but **deleting a board is owner-only**. Users can only see or remove their own `board_members` rows.
+- **Realtime:** `boards`, `lists`, and `cards` are in the `supabase_realtime` publication with `REPLICA IDENTITY FULL`, so update and delete events carry the full old row to every subscriber.
+- **Server-side card codes:** a `BEFORE INSERT` trigger assigns the next `MAN-###` code from a sequence whenever `code` is null or blank, and `UNIQUE (board_id, code)` prevents duplicates. The client inserts cards without a code and reads the created row back.
+- **Timestamps:** a `BEFORE UPDATE` trigger keeps `cards.updated_at` current.
+
+**Existing project:** `20260710000000_baseline_schema.sql` documents the tables that were originally created in the dashboard. It is idempotent but was never run as a migration, so on the existing hosted project mark it as applied before pushing:
+
+```bash
+supabase migration repair --status applied 20260710000000
+```
+
+On a fresh project, `supabase db push` applies the baseline and every later migration in order.
+
 ## Project Structure
 
 ```text
@@ -85,6 +102,8 @@ src/
   lib/         Supabase client, identity helpers, and row mappers
   data/        Sample domain data used during early UI development
   types.ts     Shared board, card, list, and presence models
+supabase/
+  migrations/  Postgres schema, RLS policies, realtime, and triggers
 ```
 
 ## Current Scope

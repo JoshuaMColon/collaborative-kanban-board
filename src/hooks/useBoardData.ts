@@ -31,18 +31,6 @@ interface UseBoardDataResult {
   deleteList: (listId: string) => Promise<void>;
 }
 
-function nextCardCode(existingCards: BoardCard[]): string {
-  let max = 0;
-  for (const c of existingCards) {
-    const match = /^MAN-(\d+)$/.exec(c.code);
-    if (match) {
-      const n = parseInt(match[1], 10);
-      if (n > max) max = n;
-    }
-  }
-  return `MAN-${String(max + 1).padStart(3, "0")}`;
-}
-
 // Realtime DELETE payloads only carry the primary key unless the table uses
 // REPLICA IDENTITY FULL, so read just the id and tolerate anything missing.
 function deletedId(old: unknown): string | null {
@@ -304,12 +292,13 @@ export function useBoardData(
         ? Math.max(...siblingsInList.map((c) => c.order))
         : -ORDER_GAP;
       const order = maxOrder + ORDER_GAP;
-      const code = nextCardCode(cards);
 
       const { data, error: insertError } = await supabase
         .from("cards")
+        // `code` is omitted on purpose: a BEFORE INSERT trigger assigns the
+        // next MAN-### code server-side (unique per board), and `.select()`
+        // reads the created row back so local state gets the real code.
         .insert({
-          code,
           title: trimmed,
           priority: "standard" as CardPriority,
           list_id: listId,
