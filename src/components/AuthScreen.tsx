@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { CalmBackground } from "./CalmBackground";
+import { LazyBlurText as BlurText } from "./reactbits/LazyBlurText";
+import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 
 export function AuthScreen({
   onSignIn,
@@ -15,6 +17,8 @@ export function AuthScreen({
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const reducedMotion = usePrefersReducedMotion();
+  const heading = mode === "signin" ? "Welcome back" : "Create your account";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,7 +44,9 @@ export function AuthScreen({
       <CalmBackground />
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm animate-fadeUp rounded-3xl border border-line bg-surface/95 p-7 shadow-pop backdrop-blur-sm"
+        // Subtle entrance: rise a few px, unblur and settle (CSS, so it's
+        // free; collapses to instant under prefers-reduced-motion).
+        className="relative z-10 w-full max-w-sm animate-cardIn rounded-3xl border border-line bg-surface/95 p-7 shadow-pop backdrop-blur-sm"
       >
         <div
           aria-hidden="true"
@@ -52,9 +58,29 @@ export function AuthScreen({
             <rect x="15.5" y="4" width="5" height="7" rx="1.5" />
           </svg>
         </div>
-        <h1 className="mb-1 font-display text-2xl font-extrabold text-text-primary">
-          {mode === "signin" ? "Welcome back" : "Create your account"}
-        </h1>
+        {reducedMotion ? (
+          <h1 className="mb-1 font-display text-2xl font-extrabold text-text-primary">
+            {heading}
+          </h1>
+        ) : (
+          <div className="mb-1">
+            <h1 className="sr-only">{heading}</h1>
+            <div aria-hidden="true">
+              <BlurText
+                key={heading}
+                text={heading}
+                animateBy="words"
+                trigger="load"
+                direction="top"
+                delay={90}
+                stepDuration={0.4}
+                blur={10}
+                distance={14}
+                className="font-display text-2xl font-extrabold text-text-primary"
+              />
+            </div>
+          </div>
+        )}
         <p className="mb-6 text-sm text-text-secondary">
           {mode === "signin"
             ? "Sign in to pick up where your team left off."

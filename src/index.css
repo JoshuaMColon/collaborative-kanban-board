@@ -163,6 +163,72 @@ body {
   mix-blend-mode: screen;
 }
 
+/* React Bits Aurora, layered between the blobs and the grain. */
+.calm-bg__aurora {
+  position: absolute;
+  inset: 0;
+  animation: aurora-in 1.6s ease-out both;
+}
+
+@keyframes aurora-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- Card spotlight (adapted from React Bits Spotlight Card) ---------- */
+
+.card-spot {
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+
+/* Soft warm fill, painted under the card content (card is `isolate`). */
+.card-spot--fill {
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(
+    220px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    rgb(var(--accent) / 0.09),
+    transparent 70%
+  );
+}
+
+/* A 1px lit rim that follows the same point, masked to the border ring. */
+.card-spot--rim {
+  inset: -1px;
+  padding: 1px;
+  background: radial-gradient(
+    140px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    rgb(var(--accent) / 0.5),
+    transparent 75%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+.dark .card-spot--fill {
+  background: radial-gradient(
+    220px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    rgb(var(--accent) / 0.11),
+    transparent 70%
+  );
+}
+
+@media (hover: hover) {
+  .card-spotlight:hover > .card-spot {
+    opacity: 1;
+  }
+}
+
+/* Keyboard focus gets a centred, steady glow. */
+.card-spotlight:focus-visible > .card-spot {
+  opacity: 1;
+}
+
 @keyframes calm-drift-1 {
   to { transform: translate(12vmax, 8vmax) scale(1.08); }
 }

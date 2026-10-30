@@ -5,6 +5,8 @@ import { Celebration } from "./Celebration";
 import { PresenceAvatar } from "./PresenceAvatar";
 import { PRIORITY_META } from "../lib/priority";
 import { PriorityTag } from "./PriorityTag";
+import { CardSpotlightLayers } from "./reactbits/CardSpotlight";
+import { useCardSpotlight } from "./reactbits/useCardSpotlight";
 
 /** Pure visual card, shared by the sortable card and the drag overlay. */
 export function CardFace({
@@ -96,6 +98,8 @@ export function CardTicket({
     transition,
     isDragging,
   } = useSortable({ id: card.id, data: { type: "card", card } });
+  // Cursor-following warm glow; off while this card is the drag placeholder.
+  const spotlight = useCardSpotlight(isDragging);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -116,18 +120,24 @@ export function CardTicket({
       style={style}
       {...attributes}
       {...listeners}
+      onPointerMove={spotlight.onPointerMove}
       onClick={() => onOpen?.(card)}
       onKeyDown={(e) => {
         // dnd-kit's attributes make the card focusable; let Enter open it.
         if (e.key === "Enter") onOpen?.(card);
       }}
       aria-label={`${card.title}, ${PRIORITY_META[card.priority].label} priority, ${card.code}`}
-      className={`group relative cursor-grab select-none rounded-xl border bg-surface py-3 pl-4 pr-3 active:cursor-grabbing ${
+      className={`card-spotlight group relative isolate cursor-grab select-none rounded-xl border bg-surface py-3 pl-4 pr-3 active:cursor-grabbing ${
         isDragging
           ? "border-dashed border-line-strong bg-surface-2 opacity-60 shadow-none [&>*]:opacity-30"
           : "border-line/80 shadow-soft hover:border-line-strong hover:shadow-soft-hover"
-      } ${isNew && !isDragging ? "animate-newCard" : ""}`}
+      } ${isNew && !isDragging ? "animate-newCard" : ""} ${
+        // The card is its own stacking context (for the spotlight), so lift it
+        // above its neighbours while confetti spills past its edges.
+        celebrate && !isDragging ? "z-[1]" : ""
+      }`}
     >
+      {!isDragging && <CardSpotlightLayers />}
       <CardFace card={card} assignee={assignee} viewers={viewers} />
       {celebrate && !isDragging && <Celebration />}
     </div>
