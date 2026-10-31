@@ -46,6 +46,7 @@
 - **Little moments:** a small confetti check when a card lands in a "Done"-style column.
 - **Reduced motion:** the Aurora falls back to a static gradient, and sparks and confetti switch off under `prefers-reduced-motion`.
 - **Accessible dialogs:** modals use `role="dialog"`/`alertdialog` with `aria-modal`, trap focus, close on Escape, and return focus to the trigger.
+- **Tooltips:** icon-only buttons show their label in a tooltip after a short hover or on keyboard focus. Tooltips are announced to screen readers (`role="tooltip"` + `aria-describedby`), close on Esc, and never pop up from a tap.
 
 **Demo mode**
 - One click signs a visitor in anonymously to a seeded demo board with a **Demo** badge. Row-level security keeps demo users away from real boards and real people's profiles.
