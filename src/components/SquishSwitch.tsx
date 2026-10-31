@@ -215,7 +215,9 @@ export function SquishSwitch({
         aria-checked={checked}
         aria-disabled={disabled || undefined}
         aria-label={ariaLabel}
-        title={title}
+        // A visible <label> already says what this does, so only label-less switches get a tooltip.
+        data-tip={label ? undefined : title}
+        data-tip-off={label ? "" : undefined}
         disabled={disabled}
         className="squish-switch"
         data-on={checked ? "" : undefined}
