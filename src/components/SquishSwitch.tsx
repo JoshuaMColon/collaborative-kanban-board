@@ -143,6 +143,7 @@ export function SquishSwitch({
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (disabled || gripRef.current || event.button !== 0) return;
+    skipClickRef.current = false;
     gripRef.current = {
       id: event.pointerId,
       grab: null,
@@ -182,12 +183,12 @@ export function SquishSwitch({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    // A plain tap/click is toggled by the click event that follows, so it
+    // flips exactly once. (Toggling here too used to flip it back on iOS
+    // Safari, where the click arrives in a later task than pointerup.)
+    // Only a drag, which already committed while moving, skips that click.
     if (cancelled) commit(grip.onAtPress);
-    else if (!grip.moved) commit(!checkedRef.current);
-    skipClickRef.current = true;
-    window.setTimeout(() => {
-      skipClickRef.current = false;
-    }, 0);
+    skipClickRef.current = grip.moved;
     setDragging(false);
   };
 
@@ -232,6 +233,7 @@ export function SquishSwitch({
         }}
         onPointerLeave={() => swell.set(1)}
         onKeyDown={(event) => {
+          skipClickRef.current = false;
           if (event.key === "Escape" && gripRef.current) {
             const grip = gripRef.current;
             if (event.currentTarget.hasPointerCapture(grip.id)) {
