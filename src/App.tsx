@@ -21,6 +21,13 @@ function getInitialTheme(): ThemeMode {
   return "light";
 }
 
+// /demo (the link the portfolio's "Guest demo" button uses) starts a guest
+// session straight away. Module-level so StrictMode's double effect run
+// only signs in one guest.
+let demoRouteHandled = false;
+const openedOnDemoRoute =
+  typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "") === "/demo";
+
 function App() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const envBoardId = import.meta.env.VITE_TEST_BOARD_ID;
@@ -70,6 +77,19 @@ function App() {
     };
   }, [demoUserId]);
 
+  const [autoDemo, setAutoDemo] = useState(openedOnDemoRoute);
+
+  useEffect(() => {
+    if (!autoDemo || loading || demoRouteHandled) return;
+    demoRouteHandled = true;
+    window.history.replaceState(null, "", "/" + window.location.search);
+    if (session) {
+      setAutoDemo(false);
+      return;
+    }
+    void signInAsGuest().finally(() => setAutoDemo(false));
+  }, [autoDemo, loading, session, signInAsGuest]);
+
   const demoState = demo && demo.userId === demoUserId ? demo : null;
   const boardId = isAnonymous ? demoState?.boardId : envBoardId;
 
@@ -107,12 +127,12 @@ function App() {
       );
     }
 
-    if (loading || (isAnonymous && !demoState)) {
+    if (loading || (autoDemo && !session) || (isAnonymous && !demoState)) {
       return (
         <div className="flex h-screen items-center justify-center text-accent">
           <CalmBackground />
           <LatticeLoader
-            label={isAnonymous ? "Opening the demo board" : "Loading session"}
+            label={isAnonymous || autoDemo ? "Opening the demo board" : "Loading session"}
             pattern="orbit"
             grid={3}
             shape="round"
