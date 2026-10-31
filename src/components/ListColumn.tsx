@@ -93,7 +93,7 @@ export function ListColumn({
             onClick={() => setConfirmingDelete(true)}
             className="rounded-lg p-1.5 text-text-muted transition hover:bg-accent/10 hover:text-accent focus-visible:opacity-100 lg:opacity-0 lg:group-hover/list:opacity-100 lg:group-focus-within/list:opacity-100"
             aria-label={`Delete list "${list.title}"`}
-            title="Delete list"
+            data-tip="Delete list"
           >
             <svg
               aria-hidden="true"

@@ -143,7 +143,7 @@ export function PresenceBar({
               <button
                 type="button"
                 onClick={onToggleTheme}
-                title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
                 className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-2 text-sm font-medium text-text-primary transition hover:border-line-strong"
               >
                 {theme === "dark" ? "Light mode" : "Dark mode"}
@@ -192,7 +192,7 @@ export function PresenceBar({
             type="button"
             onClick={onOpenProfile}
             aria-label={`Your profile (${me.name})`}
-            title="Your profile"
+            data-tip="Your profile"
             className="flex items-center gap-2 rounded-full border border-line bg-surface py-1 pl-1 pr-3 text-xs font-semibold text-text-secondary shadow-soft transition hover:border-accent/40 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
             <Avatar collaborator={me} size="sm" decorative />

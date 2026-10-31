@@ -399,7 +399,7 @@ function LabelPicker({
                 role="radio"
                 aria-checked={color === c.id}
                 aria-label={c.name}
-                title={c.name}
+                data-tip={c.name}
                 onClick={() => setColor(c.id)}
                 className={`label-${c.id} label-swatch h-6 w-6 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
                   color === c.id ? "ring-2 ring-text-primary ring-offset-2 ring-offset-surface" : ""
