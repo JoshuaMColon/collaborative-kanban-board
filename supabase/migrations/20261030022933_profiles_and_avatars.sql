@@ -1,10 +1,20 @@
--- Profiles (display name + avatar) for every auth user, created by trigger,
--- plus an 'avatars' Storage bucket with per-user folders.
+-- A profile row per auth user, plus the avatars bucket.
+--
+-- I create the row from an auth.users trigger so sign-up and anonymous
+-- demo sign-in both get a display name without the client doing it.
+-- The client may insert its own row later only as a self-heal.
+--
+-- Reads: a normal account can see every profile (this app is still one
+-- shared board). A demo guest only sees themselves and people they
+-- share a board with. Writes are own-row only, and only the name and
+-- avatar URL columns are grantable.
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   display_name text not null
     constraint profiles_display_name_length check (char_length(btrim(display_name)) between 1 and 50),
+  -- Must point at this user's own folder in the avatars bucket.
+  -- The client checks the same prefix before rendering an <img>.
   avatar_url text
     constraint profiles_avatar_url_format check (
       avatar_url is null
@@ -19,8 +29,10 @@ alter table public.profiles enable row level security;
 revoke all on public.profiles from anon;
 revoke truncate, references, trigger on public.profiles from authenticated;
 
--- Does the current user share a board with p_user_id? (SECURITY DEFINER so
--- it can see other people's board_members rows.)
+-- Does the current user share a board with p_user_id?
+-- SECURITY DEFINER, empty search_path, and it lives in private so a
+-- demo guest's policy can see the other membership without opening
+-- board_members to a broad select. The API roles cannot call it.
 create or replace function private.shares_board_with(p_user_id uuid)
 returns boolean
 language sql
@@ -48,7 +60,8 @@ create policy profiles_select on public.profiles
     or private.shares_board_with(id)
   );
 
--- The signup trigger normally creates the row; this lets the app self-heal.
+-- Own row only. The trigger normally inserts first; this policy exists
+-- so the app can self-heal if that row is missing.
 create policy profiles_insert on public.profiles
   for insert to authenticated
   with check (id = (select auth.uid()));
@@ -62,8 +75,10 @@ revoke insert, update, delete on public.profiles from authenticated;
 grant insert (id, display_name, avatar_url) on public.profiles to authenticated;
 grant update (display_name, avatar_url) on public.profiles to authenticated;
 
--- Default name: metadata display_name, else the email's local part
--- ("jane.doe@x" -> "Jane Doe"), else a friendly guest name.
+-- Metadata display_name, else the email local-part ("jane.doe@x" ->
+-- "Jane Doe"), else a guest name hashed from the user id. Anonymous
+-- users have no email, so they land on the guest name. Not granted
+-- to the API; only the trigger runs it.
 create or replace function private.default_display_name(
   p_email text, p_meta jsonb, p_id uuid
 )
@@ -113,7 +128,9 @@ alter publication supabase_realtime add table public.profiles;
 alter publication supabase_realtime add table public.board_members;
 alter table public.board_members replica identity full;
 
--- Storage: public 'avatars' bucket, 1 MB images only, one folder per user.
+-- Public bucket so <img> tags work without a signed URL. 1 MB, and
+-- only the image types the profile dialog accepts. The folder check
+-- below is what keeps people out of each other's files.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('avatars', 'avatars', true, 1048576,
         array['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
@@ -122,9 +139,11 @@ on conflict (id) do update
       file_size_limit = excluded.file_size_limit,
       allowed_mime_types = excluded.allowed_mime_types;
 
--- Permanent users manage files under avatars/<their uid>/ only. Public URLs
--- are served without a SELECT policy; this one only enables upsert/list of
--- your own folder. Anonymous demo guests can't upload.
+-- Objects live at avatars/<uid>/... I check the first folder against
+-- auth.uid() so a user can't write into someone else's prefix.
+-- Anonymous guests fail the insert and update checks; the dialog
+-- hides the control for them. Public URLs are served by the bucket
+-- being public. The select policy is for listing your own folder.
 create policy avatars_select_own on storage.objects
   for select to authenticated
   using (bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.uid())::text);

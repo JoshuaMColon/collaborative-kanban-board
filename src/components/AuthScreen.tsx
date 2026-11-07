@@ -3,6 +3,10 @@ import { CalmBackground } from "./CalmBackground";
 import { LazyBlurText as BlurText } from "./reactbits/LazyBlurText";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 
+// Sign-in, sign-up, and the guest demo. I don't navigate from here:
+// once Supabase has a session, App swaps this screen for the board.
+// A successful sign-up with no session (email confirmation) stays on
+// this form and shows the notice below.
 export function AuthScreen({
   onSignIn,
   onSignUp,

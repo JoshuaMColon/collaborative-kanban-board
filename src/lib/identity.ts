@@ -7,7 +7,7 @@ function hashString(input: string): number {
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     hash = (hash << 5) - hash + input.charCodeAt(i);
-    hash |= 0;
+    hash |= 0; // force a 32-bit int so the color doesn't drift
   }
   return Math.abs(hash);
 }
@@ -22,12 +22,13 @@ function initialsFromEmail(email: string): string {
 }
 
 /**
- * Builds a stable identity (name/initials/color) for a user.
+ * Name, initials, and color for a user id when I don't have a profile yet.
  *
- * If `email` is known (e.g. for the current signed-in user, or once a
- * profiles table exists and presence broadcasts email), it's used directly.
- * Otherwise this falls back to a placeholder derived from the user id, since
- * Presence payloads from OTHER users only carry their id today.
+ * The color is hashed from the id so the same person looks the same on
+ * every client. I prefer identityFromProfile once the profile row has
+ * loaded. The email argument is only a fallback label (the signed-in
+ * user, or whatever presence happened to send); other people usually
+ * arrive as an id alone.
  */
 export function identityFor(userId: string, email?: string | null): Collaborator {
   const hash = hashString(userId);
@@ -56,7 +57,7 @@ export function initialsFromName(name: string): string {
   return (parts[0] ?? "?").slice(0, 2).toUpperCase();
 }
 
-/** Identity for someone with a profile row (real display name + avatar). */
+/** Profile wins over the id placeholder: real display name and avatar. */
 export function identityFromProfile(profile: Profile): Collaborator {
   const base = identityFor(profile.id);
   return {
@@ -67,7 +68,9 @@ export function identityFromProfile(profile: Profile): Collaborator {
   };
 }
 
-/** Placeholder for seeded comments / deleted accounts (author_id is null). */
+// Seeded demo comments and deleted accounts store a null author_id.
+// They share this one identity so the thread doesn't show a blank face.
+
 export const TEAM_IDENTITY: Collaborator = {
   id: "kanban-team",
   name: "Kanban team",
