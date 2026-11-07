@@ -1,7 +1,10 @@
--- Server-side MAN-### card codes. The trigger only fills `code` when the
--- client leaves it null/blank, so today's client (which still sends a code)
--- keeps working. Client-supplied MAN-n codes advance the sequence so the two
--- sources never hand out the same number. Unique per board.
+-- MAN-### codes are assigned here, not in the browser, so two people
+-- adding a card at once can't pick the same number. The client inserts
+-- with code left blank and reads the row back.
+--
+-- A row that arrives with its own MAN-n (older clients did this) advances
+-- the sequence past that number. Other prefixes, like the demo seed's
+-- DEMO-###, are stored as-is and don't touch the sequence. Unique per board.
 
 create sequence if not exists public.card_code_seq as bigint start with 1;
 
@@ -12,8 +15,12 @@ select setval(
   exists (select 1 from public.cards where code ~ '^MAN-[0-9]+$')
 );
 
+-- The trigger is security invoker, so the inserting role has to be
+-- allowed to nextval/setval or the insert fails inside the trigger.
 grant usage, select, update on sequence public.card_code_seq to authenticated;
 
+-- security invoker: this runs as the inserting user, so it can't bypass
+-- RLS. search_path is empty and every name below is schema-qualified.
 create or replace function public.assign_card_code()
 returns trigger
 language plpgsql

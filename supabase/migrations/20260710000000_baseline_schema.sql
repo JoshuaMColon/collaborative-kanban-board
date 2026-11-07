@@ -1,7 +1,13 @@
--- Baseline: documents the schema that already existed in the hosted project
--- before migrations were tracked (created via the dashboard). Idempotent, so it
--- is safe on the existing database and recreates the schema on a fresh one.
--- NOT applied via MCP (the objects already exist).
+-- Baseline: the schema that already existed in the hosted project
+-- before migrations were tracked (created in the dashboard). Idempotent,
+-- so it is safe on that database and recreates the tables on a fresh one.
+-- It was never run as a migration there; mark it applied before pushing.
+--
+-- Four tables. boards.owner_id is who created the board; deleting a
+-- board is owner-only in the RLS migration, and it cascades to lists
+-- and cards. "order" is quoted because ORDER is reserved. Cards store
+-- board_id as well as list_id so a realtime filter and an RLS check
+-- can hit one column instead of joining through lists.
 
 create table if not exists public.boards (
   id uuid primary key default gen_random_uuid(),

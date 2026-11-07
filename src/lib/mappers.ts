@@ -8,7 +8,9 @@ import type {
   Profile,
 } from "../types";
 
-// Raw shapes as they come back from Supabase (snake_case, matches the SQL schema)
+// Postgres stays snake_case. Components only see the camelCase models
+// in types.ts, so a column rename is fixed here and nowhere else.
+// Null optional fields become undefined so the UI can use truthiness.
 export interface DbList {
   id: string;
   board_id: string;
@@ -72,6 +74,8 @@ export function mapDbCard(row: DbCard): BoardCard {
     id: row.id,
     code: row.code,
     title: row.title,
+    // Null from Postgres, undefined in the UI. The write path turns
+    // a cleared field back into an explicit null (see updateCard).
     description: row.description ?? undefined,
     priority: row.priority,
     assigneeId: row.assignee_id ?? undefined,

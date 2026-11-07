@@ -1,4 +1,6 @@
--- Keep cards.updated_at accurate on every update (the client never sets it).
+-- The client never writes updated_at. I stamp it here so a realtime
+-- subscriber sees a fresh timestamp, including when two edits race.
+-- Same function is reused later for comment edits.
 
 create or replace function public.touch_updated_at()
 returns trigger
