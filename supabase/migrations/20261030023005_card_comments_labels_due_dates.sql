@@ -80,7 +80,10 @@ begin
 end;
 $$;
 
--- Abuse limits for public demo boards (no-ops on real boards).
+-- Caps for the public demo board only. Real boards return immediately.
+-- The trigger is named zz_ so it runs after the board_id triggers
+-- (Postgres fires them in name order). security definer because it
+-- counts every row on the board, including ones this user didn't write.
 create or replace function private.enforce_demo_limits()
 returns trigger
 language plpgsql
@@ -131,7 +134,8 @@ create trigger card_comments_touch_updated_at
   before update on public.card_comments
   for each row execute function public.touch_updated_at();
 
--- Limits fire after board_id is set (trigger names sort alphabetically).
+-- zz_ prefix: these must run after comment_set_board / the card's own
+-- BEFORE INSERT triggers, because the cap counts on new.board_id.
 create trigger zz_demo_limits before insert on public.cards
   for each row execute function private.enforce_demo_limits();
 create trigger zz_demo_limits before insert on public.lists

@@ -21,9 +21,10 @@ function getInitialTheme(): ThemeMode {
   return "light";
 }
 
-// /demo (the link the portfolio's "Guest demo" button uses) starts a guest
-// session straight away. Module-level so StrictMode's double effect run
-// only signs in one guest.
+// The portfolio links to /demo. I start one guest session from here,
+// then replace the URL with / so a refresh doesn't mint another
+// anonymous user. The flag is module-level because StrictMode runs
+// the effect twice in dev.
 let demoRouteHandled = false;
 const openedOnDemoRoute =
   typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "") === "/demo";
@@ -42,8 +43,8 @@ function App() {
     signOut,
   } = useAuth();
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
-  // Demo sessions always land on the seeded demo board (the only board RLS
-  // lets an anonymous user read), whatever VITE_TEST_BOARD_ID says.
+  // Guests ignore VITE_TEST_BOARD_ID. I look up the is_demo board;
+  // RLS is what makes that the only row this session can see.
   const [demo, setDemo] = useState<{
     userId: string;
     boardId: string | null;
@@ -83,6 +84,8 @@ function App() {
     if (!autoDemo || loading || demoRouteHandled) return;
     demoRouteHandled = true;
     window.history.replaceState(null, "", "/" + window.location.search);
+    // Already signed in (a real account, or a guest refresh). Don't
+    // start a second anonymous session on top of it.
     if (session) {
       setAutoDemo(false);
       return;
@@ -94,8 +97,8 @@ function App() {
   const boardId = isAnonymous ? demoState?.boardId : envBoardId;
 
   async function createAccountFromDemo() {
-    // The guest session is throwaway (cleaned up by a daily job), so
-    // "create an account" means leaving the demo and opening sign-up.
+    // Anonymous users aren't upgraded in place. I sign out and open
+    // sign-up; the daily job deletes the guest row.
     setAuthMode("signup");
     await signOut();
   }

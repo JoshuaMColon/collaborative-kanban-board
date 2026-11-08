@@ -158,6 +158,8 @@ export function Board({
   const { presence } = usePresence(
     boardId,
     userId,
+    // Fallback label until the profile row loads. Demo guests have no
+    // email, so I pass null and let the profile name win.
     myProfile?.displayName ?? (isDemo ? null : userEmail),
     ready,
   );

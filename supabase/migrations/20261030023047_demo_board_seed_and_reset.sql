@@ -1,6 +1,13 @@
--- Public demo board: seeded with sample lists, cards, labels and comments,
--- reset to that seed every hour by pg_cron. Expired anonymous demo guests
--- are cleaned up daily. Neither function is callable from the API.
+-- The shared sample board. reset_demo_board is the only writer that
+-- sets is_demo, and it is not granted to authenticated, so a guest
+-- can't call it or clone the flag. pg_cron runs it on the hour.
+--
+-- I delete lists, labels, and cards. Lists already cascade to cards;
+-- the extra card delete means the reset doesn't depend on that.
+-- Comments and label links go with the cards. Seeded comments use a
+-- null author and show up as "Kanban team".
+-- cleanup_anonymous_users drops guest auth rows older than a day.
+-- Their cards unassign and their profile cascades.
 
 create extension if not exists pg_cron;
 
