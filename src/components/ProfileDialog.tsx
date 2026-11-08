@@ -124,6 +124,8 @@ export function ProfileDialog({
           <Avatar collaborator={preview} size="lg" className="ring-2 ring-line" />
           <div className="min-w-0">
             {isDemo ? (
+              // The storage policy rejects anonymous uploads. I hide
+              // the control instead of letting the request fail.
               <p className="text-xs leading-relaxed text-text-secondary">
                 Photo uploads are for free accounts. Demo guests show up with initials.
               </p>

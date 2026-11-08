@@ -49,7 +49,7 @@ export interface CardLabelLink {
 
 export interface BoardCard {
   id: string;
-  code: string; // e.g. "MAN-014" — manifest-style ticket code
+  code: string; // e.g. "MAN-014", assigned by a Postgres trigger
   title: string;
   description?: string;
   priority: CardPriority;
@@ -57,6 +57,7 @@ export interface BoardCard {
   /** Calendar date, "YYYY-MM-DD" (no time zone). */
   dueDate?: string;
   listId: string;
+  /** Integer position in the list. Gaps, not a dense 0..n index. */
   order: number;
   updatedAt: string;
 }
@@ -64,6 +65,7 @@ export interface BoardCard {
 export interface BoardList {
   id: string;
   title: string;
+  /** Append order. Lists aren't drag-reordered; cards are. */
   order: number;
 }
 
@@ -71,13 +73,14 @@ export interface Board {
   id: string;
   title: string;
   lists: BoardList[];
+  /** Flat, not nested under lists. The list id on each card is the join. */
   cards: BoardCard[];
 }
 
 /**
- * Presence represents who is currently viewing/active on the board.
- * This is populated by Supabase Presence once the backend is wired up;
- * for now it's driven by mock data.
+ * One person currently connected to this board, from Supabase Presence.
+ * viewingCardId is on the payload, but this client never publishes one,
+ * so "who's looking at this card" stays empty.
  */
 export interface PresenceEntry {
   collaboratorId: string;

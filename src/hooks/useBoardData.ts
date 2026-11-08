@@ -1,8 +1,20 @@
+// Lists and cards for one board.
+//
+// The first load is three reads in parallel. After that, a realtime
+// channel applies every insert, update, and delete by id, including
+// echoes of this client's own writes. I don't merge fields: the row
+// Postgres stored replaces the local card.
+//
+// Moves and edits paint first. If the write errors, or RLS returns
+// zero rows, I toast and refetch. A slower refetch can't overwrite
+// a newer one.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mapDbCard, mapDbList, type DbCard, type DbList } from "../lib/mappers";
 import { supabase } from "../lib/supabase";
 import type { BoardCard, BoardList, CardPriority } from "../types";
 
+// Shared with Board.tsx. Appends and a full renumber step by this so
+// a later midpoint usually fits without rewriting the column.
 const ORDER_GAP = 1024;
 
 export type CardUpdates = Partial<
@@ -33,8 +45,9 @@ interface UseBoardDataResult {
   deleteList: (listId: string) => Promise<void>;
 }
 
-// Realtime DELETE payloads only carry the primary key unless the table uses
-// REPLICA IDENTITY FULL, so read just the id and tolerate anything missing.
+// DELETE payloads are supposed to carry the full old row (replica
+// identity full), but I only trust the id. A missing id is ignored
+// rather than wiping state.
 function deletedId(old: unknown): string | null {
   if (old && typeof old === "object" && "id" in old) {
     const id = (old as { id: unknown }).id;
@@ -54,11 +67,11 @@ export function useBoardData(
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Ignore results from an older fetch if a newer one has started.
+  // A slower response must not overwrite a newer load.
   const fetchSeq = useRef(0);
 
-  // `silent` = background resync after a failed write: no loader, and a
-  // failure shows as a non-blocking message instead of replacing the board.
+  // silent = background resync after a failed write. No loader, and a
+  // failure is a toast instead of replacing the board with an error.
   const fetchAll = useCallback(
     async (silent = false) => {
       const seq = ++fetchSeq.current;
@@ -74,8 +87,8 @@ export function useBoardData(
       ]);
 
       if (seq !== fetchSeq.current) {
-        // A newer fetch superseded this one; just make sure a blocking
-        // load never leaves the spinner up.
+        // Something newer started. Drop this result, but don't leave
+        // a blocking load spinning.
         if (!silent) setLoading(false);
         return;
       }
@@ -86,6 +99,8 @@ export function useBoardData(
         cardsRes.error?.message ??
         null;
 
+      // Keep whichever reads succeeded. A cards failure still shouldn't
+      // throw away a good lists result.
       if (!boardRes.error) setBoardTitle(boardRes.data?.title ?? null);
       if (!listsRes.error) setLists((listsRes.data as DbList[]).map(mapDbList));
       if (!cardsRes.error) setCards((cardsRes.data as DbCard[]).map(mapDbCard));
@@ -104,6 +119,8 @@ export function useBoardData(
     void fetchAll(true);
   }, [fetchAll]);
 
+  // The optimistic patch stays until this refetch lands. I don't try
+  // to undo the field myself; the server copy is the resolution.
   const reportWriteError = useCallback(
     (message: string) => {
       setActionError(message);
@@ -120,7 +137,9 @@ export function useBoardData(
     void fetchAll(false);
   }, [ready, fetchAll]);
 
-  // Realtime: reflect changes from any client (including this one, harmlessly)
+  // One channel per board. Our own writes echo back through here and
+  // replace the card by id, which is a no-op when the optimistic
+  // patch already matched the row.
   useEffect(() => {
     if (!ready) return;
 
@@ -134,8 +153,9 @@ export function useBoardData(
       const id = deletedId(old);
       if (!id) return;
       setLists((prev) => prev.filter((l) => l.id !== id));
-      // If the DB cascades, card DELETE events arrive too; drop them now
-      // either way so a removed column never leaves orphaned cards behind.
+      // Card deletes usually arrive too (ON DELETE CASCADE), but I
+      // drop this column's cards now so a gap in those events can't
+      // leave orphans on screen.
       setCards((prev) => prev.filter((c) => c.listId !== id));
     };
 
@@ -185,9 +205,9 @@ export function useBoardData(
           });
         },
       )
-      // Filtered subscriptions can miss DELETE events (the old row usually
-      // only has its id, so `board_id` can't be matched). Listen to deletes
-      // unfiltered as well; removing an id we don't have is a no-op.
+      // A filter matches board_id on the row Realtime uses for routing.
+      // I also listen to unfiltered deletes in case that row doesn't
+      // carry board_id. Removing an id this board doesn't have is a no-op.
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "cards" },
@@ -205,6 +225,8 @@ export function useBoardData(
     };
   }, [ready, boardId]);
 
+  // Optimistic. The drop already chose `order` (a midpoint, or the
+  // end of a list). I paint it, then write that one row.
   const moveCard = useCallback(
     async (cardId: string, listId: string, order: number) => {
       setCards((prev) =>
@@ -222,6 +244,7 @@ export function useBoardData(
         return;
       }
 
+      // RLS denial comes back as success with zero rows, not an error.
       if (!data || data.length === 0) {
         reportWriteError(
           "Couldn't move the card — you may not have permission to edit it.",
@@ -231,6 +254,10 @@ export function useBoardData(
     [reportWriteError],
   );
 
+  // The gap between two neighbours ran out. I rewrite every card in
+  // the list to (index + 1) * ORDER_GAP. These are separate updates;
+  // if one fails I resync the whole board instead of leaving a
+  // half-renumbered column on screen.
   const reorderList = useCallback(
     async (listId: string, orderedCardIds: string[]) => {
       const newOrders = new Map(
@@ -289,6 +316,9 @@ export function useBoardData(
       const trimmed = title.trim();
       if (!trimmed) return null;
 
+      // Append past the current max by a full gap. I wait for the
+      // insert instead of painting a placeholder: both the id and the
+      // MAN-### code come back from Postgres.
       const siblingsInList = cards.filter((c) => c.listId === listId);
       const maxOrder = siblingsInList.length
         ? Math.max(...siblingsInList.map((c) => c.order))
@@ -334,8 +364,9 @@ export function useBoardData(
         prev.map((c) => (c.id === cardId ? { ...c, ...updates } : c)),
       );
 
-      // supabase-js drops `undefined` keys when serialising, so a cleared
-      // description has to be sent as an explicit null to actually persist.
+      // supabase-js drops `undefined` keys, so a cleared description,
+      // assignee, or due date has to be an explicit null or the old
+      // value stays in Postgres.
       const dbUpdates: {
         title?: string;
         description?: string | null;
@@ -367,6 +398,8 @@ export function useBoardData(
         return;
       }
 
+      // Same as a move: zero rows means RLS rejected it. The refetch
+      // puts the previous title and fields back.
       if (!data || data.length === 0) {
         reportWriteError(
           "Couldn't save the card — you may not have permission to edit it.",
@@ -380,6 +413,9 @@ export function useBoardData(
     async (cardId: string) => {
       const removed = cards.find((c) => c.id === cardId);
       setCards((prev) => prev.filter((c) => c.id !== cardId));
+      // A failed delete puts this card back immediately. The resync
+      // inside reportWriteError is the second line, in case more than
+      // this one row was wrong.
 
       const { error: deleteError } = await supabase
         .from("cards")
@@ -403,6 +439,7 @@ export function useBoardData(
       const trimmed = title.trim();
       if (!trimmed) return;
 
+      // Lists aren't drag-reordered, so a dense increment is enough.
       const maxOrder = lists.length
         ? Math.max(...lists.map((l) => l.order))
         : -1;
@@ -434,7 +471,7 @@ export function useBoardData(
       const removedList = lists.find((l) => l.id === listId);
       const removedCards = cards.filter((c) => c.listId === listId);
 
-      // Optimistic: the column and its cards disappear immediately.
+      // The column and its cards disappear immediately.
       setLists((prev) => prev.filter((l) => l.id !== listId));
       setCards((prev) => prev.filter((c) => c.listId !== listId));
 
@@ -452,8 +489,9 @@ export function useBoardData(
         });
       };
 
-      // Delete the cards first so this works whether or not the database
-      // cascades list deletes to cards (and never trips a FK constraint).
+      // Cards first, then the list. The FK cascades, but I don't depend
+      // on that: deleting the children myself still works if the
+      // cascade is ever dropped, and it can't trip the constraint.
       const { error: cardsError } = await supabase
         .from("cards")
         .delete()

@@ -1,5 +1,8 @@
--- Card details: due dates, comments, and per-board labels. Every new table
--- carries board_id (filled by trigger) so RLS and realtime filters are cheap.
+-- Due dates, comments, and labels. Each new table carries board_id,
+-- filled by a trigger from the card, so RLS and realtime can filter
+-- on one column. I don't trust a board_id the client sends: the
+-- trigger overwrites it, and card_labels also refuses a label from
+-- another board.
 
 alter table public.cards add column if not exists due_date date;
 
@@ -41,8 +44,9 @@ create table if not exists public.card_labels (
 create index if not exists card_labels_label_id_idx on public.card_labels (label_id);
 create index if not exists card_labels_board_id_idx on public.card_labels (board_id);
 
--- board_id is always derived from the card (never trusted from the client),
--- and a card can only carry labels from its own board.
+-- Overwrite board_id from the card. A label link whose label lives
+-- on a different board is rejected. security invoker, so this can't
+-- see a card the current user couldn't already select.
 create or replace function private.comment_set_board()
 returns trigger
 language plpgsql
@@ -76,7 +80,10 @@ begin
 end;
 $$;
 
--- Abuse limits for public demo boards (no-ops on real boards).
+-- Caps for the public demo board only. Real boards return immediately.
+-- The trigger is named zz_ so it runs after the board_id triggers
+-- (Postgres fires them in name order). security definer because it
+-- counts every row on the board, including ones this user didn't write.
 create or replace function private.enforce_demo_limits()
 returns trigger
 language plpgsql
@@ -127,7 +134,8 @@ create trigger card_comments_touch_updated_at
   before update on public.card_comments
   for each row execute function public.touch_updated_at();
 
--- Limits fire after board_id is set (trigger names sort alphabetically).
+-- zz_ prefix: these must run after comment_set_board / the card's own
+-- BEFORE INSERT triggers, because the cap counts on new.board_id.
 create trigger zz_demo_limits before insert on public.cards
   for each row execute function private.enforce_demo_limits();
 create trigger zz_demo_limits before insert on public.lists
@@ -144,6 +152,10 @@ alter table public.card_labels enable row level security;
 revoke all on public.card_comments, public.board_labels, public.card_labels from anon;
 revoke truncate, references, trigger on public.card_comments, public.board_labels, public.card_labels from authenticated;
 
+-- Anyone who can open the board can read and post. Edit and delete
+-- are author-only. A seeded comment has a null author, so nobody's
+-- uid matches and nobody can change it. Only the body column is
+-- updatable; card_id and author_id stay put.
 create policy card_comments_select on public.card_comments for select to authenticated
   using (private.can_access_board(board_id));
 create policy card_comments_insert on public.card_comments for insert to authenticated
@@ -153,7 +165,6 @@ create policy card_comments_update on public.card_comments for update to authent
   with check (author_id = (select auth.uid()) and private.can_access_board(board_id));
 create policy card_comments_delete on public.card_comments for delete to authenticated
   using (author_id = (select auth.uid()));
--- Only the text of a comment can be edited.
 revoke update on public.card_comments from authenticated;
 grant update (body) on public.card_comments to authenticated;
 
@@ -175,8 +186,11 @@ create policy card_labels_insert on public.card_labels for insert to authenticat
   with check (private.can_access_board(board_id));
 create policy card_labels_delete on public.card_labels for delete to authenticated
   using (private.can_access_board(board_id));
+-- Links aren't edited. You insert one or delete it.
 revoke update on public.card_labels from authenticated;
 
+-- Full old rows, same reason as cards and lists: delete events have
+-- to carry the ids the client filters on.
 -- Realtime -------------------------------------------------------------
 alter table public.card_comments replica identity full;
 alter table public.board_labels replica identity full;

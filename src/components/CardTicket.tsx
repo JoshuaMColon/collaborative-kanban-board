@@ -162,6 +162,8 @@ export function CardTicket({
   } = useSortable({
     id: card.id,
     data: { type: "card", card },
+    // Off while a filter hides cards. The listeners sit on the whole
+    // card; Board's 6px activation constraint keeps a click as a click.
     disabled: dragDisabled,
   });
   // Cursor-following warm glow; off while this card is the drag placeholder.

@@ -10,9 +10,17 @@ interface TrackedState {
 }
 
 /**
- * Tracks the current user's presence on a board and returns everyone
- * currently connected. viewingCardId can be updated later (e.g. on card
- * hover/focus) via the returned setViewingCard function.
+ * Who is on this board right now.
+ *
+ * I key the channel by user id so someone's tabs group under one key.
+ * The header dedupes on that id; the raw snapshot can still hold one
+ * entry per tab. `sync` is the whole snapshot, which I flatten because
+ * Supabase groups metas by the presence key.
+ *
+ * viewingCardId is sent with the track payload captured at subscribe
+ * time. setViewingCard only updates local state, and the board never
+ * calls it, so cards don't show a "looking at this" face. The header
+ * still knows who is online.
  */
 export function usePresence(
   boardId: string,
@@ -57,9 +65,9 @@ export function usePresence(
     return () => {
       supabase.removeChannel(channel);
     };
-    // Intentionally excluding viewingCardId from deps — updates go through
-    // the separate effect below so we don't tear down/rebuild the channel
-    // every time the user hovers a different card.
+    // viewingCardId is read once, inside subscribe. It is not a
+    // dependency: rebuilding the channel on every change would flap
+    // presence for everyone else. Nothing writes it today.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, userId, email, boardId]);
 

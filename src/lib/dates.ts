@@ -1,4 +1,6 @@
-/** Due dates are plain calendar dates ("YYYY-MM-DD"), compared in local time. */
+// Due dates are calendar dates, not timestamps. I compare them in
+// local time so "today" is the viewer's today, and a chip doesn't
+// flip over at UTC midnight.
 
 export type DueStatus = "overdue" | "soon" | "upcoming" | "done";
 

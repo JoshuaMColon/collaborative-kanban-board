@@ -1,13 +1,19 @@
--- Demo mode foundation: a private helper schema, an is_demo flag on boards,
--- anonymous-aware RLS (anonymous visitors can only reach demo boards), board
--- membership joins, and length limits. Additive and compatible with the
--- existing single-board app: permanent signed-in users keep the same access.
+-- Who can touch a board, once the demo exists.
+--
+-- A normal account can still reach every board (the app is one shared
+-- board). An anonymous session only passes when the board is flagged
+-- is_demo. I read is_anonymous from the JWT. Nothing in the row is
+-- trusted for that.
+--
+-- Helpers live in private, which the API roles cannot use. The two
+-- that read tables from inside a policy are security definer with an
+-- empty search_path, so the lookup doesn't recurse through RLS.
 
 create schema if not exists private;
 revoke all on schema private from public, anon;
 grant usage on schema private to authenticated;
 
--- True for Supabase anonymous sign-ins (JWT claim is_anonymous).
+-- Supabase sets is_anonymous on the JWT for signInAnonymously().
 create or replace function private.is_anonymous()
 returns boolean
 language sql
@@ -20,15 +26,16 @@ $$;
 
 alter table public.boards add column if not exists is_demo boolean not null default false;
 
--- Demo boards belong to nobody, so no client can ever delete them.
+-- A demo board has no owner, so the owner-only delete policy never
+-- matches it. The check stops a real board from being saved ownerless.
 alter table public.boards alter column owner_id drop not null;
 alter table public.boards
   add constraint boards_owner_required check (is_demo or owner_id is not null);
 
 create index if not exists boards_is_demo_idx on public.boards (is_demo) where is_demo;
 
--- SECURITY DEFINER so it can read boards from inside boards' own policies
--- without recursing into RLS. Lives in the unexposed private schema.
+-- security definer on purpose. boards_select calls this, and a normal
+-- lookup of boards from inside boards' own policy recurses.
 create or replace function private.is_demo_board(p_board_id uuid)
 returns boolean
 language sql
@@ -39,8 +46,8 @@ as $$
   select exists (select 1 from public.boards b where b.id = p_board_id and b.is_demo);
 $$;
 
--- Permanent users: every board (the app's current shared-board model).
--- Anonymous users: demo boards only.
+-- Permanent users: every board. Anonymous users: demo boards only.
+-- This is the predicate every board-scoped policy uses.
 create or replace function private.can_access_board(p_board_id uuid)
 returns boolean
 language sql
@@ -79,6 +86,9 @@ create policy boards_select on public.boards
   for select to authenticated
   using (private.can_access_board(id));
 
+-- Guests can't create boards. A normal user can, but only owned by
+-- themselves. Delete stays owner-only, which a null-owner demo board
+-- never satisfies.
 drop policy if exists boards_insert on public.boards;
 create policy boards_insert on public.boards
   for insert to authenticated
@@ -89,10 +99,10 @@ create policy boards_update on public.boards
   for update to authenticated
   using (private.can_access_board(id))
   with check (private.can_access_board(id));
--- boards_delete (owner-only) is unchanged.
 
--- Clients may only write a board's title (plus id/owner on create), never
--- the is_demo flag.
+-- Column grants are the lock on is_demo. Even a loose policy couldn't
+-- let a client set the flag: authenticated has no privilege on it.
+-- They can insert id, title, and owner_id, and update title only.
 revoke insert, update on public.boards from authenticated;
 grant insert (id, title, owner_id) on public.boards to authenticated;
 grant update (title) on public.boards to authenticated;
@@ -126,8 +136,10 @@ create policy cards_update on public.cards for update to authenticated
 create policy cards_delete on public.cards for delete to authenticated
   using (private.can_access_board(board_id));
 
--- board_members: see everyone on boards you belong to; join a board you can
--- access as a plain member (the app does this on first visit).
+-- See the other members of a board you've joined (the assignee list).
+-- You can insert only your own row, only as role 'member', and only
+-- on a board can_access_board already allows. That's the join the
+-- app does on first visit. No update policy, and update is revoked.
 drop policy if exists board_members_select on public.board_members;
 create policy board_members_select on public.board_members
   for select to authenticated
@@ -144,8 +156,8 @@ create policy board_members_insert on public.board_members
 -- board_members_delete (own row) is unchanged; there is no update policy.
 revoke update on public.board_members from authenticated;
 
--- Deleting a user (e.g. expired demo guests) unassigns their cards instead
--- of failing on the foreign key.
+-- The daily guest cleanup deletes auth.users rows. Unassign their
+-- cards instead of failing the delete on this foreign key.
 alter table public.cards drop constraint if exists cards_assignee_id_fkey;
 alter table public.cards
   add constraint cards_assignee_id_fkey

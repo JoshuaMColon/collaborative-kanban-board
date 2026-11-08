@@ -1,6 +1,6 @@
--- Covering indexes for every foreign key (fixes the unindexed_foreign_keys
--- advisor) plus composite indexes matching the app's
--- `.eq("board_id", id).order("order")` queries.
+-- The board screen loads `.eq(board_id).order("order")` on every open,
+-- so the composites match that exactly. The single-column indexes are
+-- the foreign keys Postgres would otherwise scan on delete.
 
 create index if not exists lists_board_id_order_idx on public.lists (board_id, "order");
 create index if not exists cards_board_id_order_idx on public.cards (board_id, "order");

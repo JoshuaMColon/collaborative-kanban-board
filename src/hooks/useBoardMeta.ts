@@ -36,6 +36,9 @@ function upsertById<T extends { id: string }>(prev: T[], next: T): T[] {
     : [...prev, next];
 }
 
+// The demo cap raises a sentence I already wrote in SQL. A duplicate
+// label name comes back as a constraint, which I translate. Everything
+// else is shown as Supabase sent it.
 function friendly(message: string): string {
   if (/demo board is full/i.test(message)) return message;
   if (/board_labels_board_name_key|duplicate key/i.test(message)) {
@@ -45,9 +48,14 @@ function friendly(message: string): string {
 }
 
 /**
- * Everything around the cards: board members and their profiles, labels,
- * which cards carry which labels, and comments. Kept separate from
- * useBoardData so the card/list sync stays exactly as it was.
+ * Members, profiles, labels, and comments for one board.
+ *
+ * Split from useBoardData so list and card ordering stays on its own
+ * channel. On open I upsert my own board_members row (that's how the
+ * assignee list learns I've been here), then load the rest.
+ *
+ * Comments wait for the insert to return so I have the server id.
+ * Label toggles and deletes paint first and roll back if the write fails.
  */
 export function useBoardMeta({
   boardId,
@@ -69,6 +77,8 @@ export function useBoardMeta({
   const [cardLabels, setCardLabels] = useState<CardLabelLink[]>([]);
   const [comments, setComments] = useState<CardComment[]>([]);
   const requested = useRef<Set<string>>(new Set());
+  // onError changes identity when the parent re-renders. I read it
+  // through a ref so `report` can keep an empty dependency list.
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -79,6 +89,8 @@ export function useBoardMeta({
   const loadProfiles = useCallback(async (ids: string[]) => {
     const missing = ids.filter((id) => id && !requested.current.has(id));
     if (missing.length === 0) return;
+    // Remember who I asked for. On failure I forget them so a later
+    // load can retry; a success stays cached for this session.
     missing.forEach((id) => requested.current.add(id));
     const { data, error } = await supabase
       .from("profiles")
@@ -95,7 +107,9 @@ export function useBoardMeta({
     });
   }, []);
 
-  // Join the board (members list + assignee picker), then load everything.
+  // Join as myself, then load. The insert policy only allows my own
+  // row, role member, on a board I can access. ignoreDuplicates so a
+  // second visit doesn't error on the primary key.
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
@@ -127,6 +141,7 @@ export function useBoardMeta({
       ]);
       if (cancelled) return;
 
+      // If the member list fails, the picker still has me.
       const members = membersRes.error
         ? [userId]
         : Array.from(
@@ -166,7 +181,10 @@ export function useBoardMeta({
     void loadProfiles(extraKey.split(","));
   }, [ready, extraKey, loadProfiles]);
 
-  // The signup trigger creates profiles, but self-heal if ours is missing.
+  // The auth.users trigger inserts the profile, usually with a better
+  // name than "Guest". I only insert after a load came back without
+  // my row, and I wait so I don't beat that trigger. ignoreDuplicates
+  // leaves the row alone if it arrived during the wait.
   useEffect(() => {
     if (!ready || profiles.has(userId) || !requested.current.has(userId)) return;
     const timer = window.setTimeout(async () => {
@@ -183,7 +201,10 @@ export function useBoardMeta({
     return () => window.clearTimeout(timer);
   }, [ready, profiles, userId]);
 
-  // Realtime for comments, labels, label links, members and profile edits.
+  // Separate channel from cards and lists so a comment storm doesn't
+  // share a subscription with ordering. Deletes are unfiltered, same
+  // reason as useBoardData: the old row may not carry board_id.
+  // Profile updates aren't board-scoped; I ignore ids I haven't loaded.
   useEffect(() => {
     if (!ready) return;
     const filter = `board_id=eq.${boardId}`;
@@ -330,7 +351,8 @@ export function useBoardMeta({
         }
       } else {
         setCardLabels((prev) => [...prev, { cardId, labelId }]);
-        // board_id is filled in (and checked) by a trigger.
+        // I send board_id so the row is complete, but the trigger
+        // overwrites it from the card before the policy checks it.
         const { error } = await supabase
           .from("card_labels")
           .insert({ card_id: cardId, label_id: labelId, board_id: boardId });
@@ -350,6 +372,8 @@ export function useBoardMeta({
     async (cardId: string, body: string) => {
       const trimmed = body.trim().slice(0, COMMENT_MAX);
       if (!trimmed) return false;
+      // Not optimistic. I need the server id, and the insert policy
+      // requires author_id to be me.
       const { data, error } = await supabase
         .from("card_comments")
         .insert({ card_id: cardId, board_id: boardId, author_id: userId, body: trimmed })
@@ -371,9 +395,12 @@ export function useBoardMeta({
       if (!trimmed) return false;
       const { data, error } = await supabase
         .from("card_comments")
+        // Only `body` is grantable. author_id and card_id can't change.
         .update({ body: trimmed })
         .eq("id", commentId)
         .select("*");
+      // The update policy is author_id = me. A miss comes back as zero
+      // rows, which I treat as "not yours".
       if (error || !data?.length) {
         report("Couldn't edit the comment", error?.message ?? "you can only edit your own comments");
         return false;
@@ -393,6 +420,7 @@ export function useBoardMeta({
         .delete()
         .eq("id", commentId)
         .select("id");
+      // Author-only, same as edit. Zero rows puts the comment back.
       if (error || !data?.length) {
         if (removed) setComments((prev) => upsertById(prev, removed));
         report("Couldn't delete the comment", error?.message ?? "you can only delete your own comments");
@@ -408,6 +436,8 @@ export function useBoardMeta({
       if (updates.displayName !== undefined) {
         db.display_name = updates.displayName.trim().slice(0, DISPLAY_NAME_MAX);
       }
+      // Clearing the photo has to be an explicit null. Undefined would
+      // be dropped and the old URL would stay.
       if ("avatarUrl" in updates) db.avatar_url = updates.avatarUrl ?? null;
       const { data, error } = await supabase
         .from("profiles")
@@ -434,6 +464,9 @@ export function useBoardMeta({
         return { error: "That image is over 1 MB. Please pick a smaller one." };
       }
       const ext = file.type.split("/")[1].replace("jpeg", "jpg");
+      // avatars/<uid>/... is what the storage policy checks. A new
+      // object name busts the cached public URL; I delete the older
+      // files in this folder afterwards.
       const path = `${userId}/avatar-${Date.now()}.${ext}`;
       const bucket = supabase.storage.from("avatars");
       const { error } = await bucket.upload(path, file, {
@@ -443,7 +476,6 @@ export function useBoardMeta({
       });
       if (error) return { error: error.message };
 
-      // Tidy up older uploads in this user's folder (best effort).
       const { data: existing } = await bucket.list(userId);
       const stale = (existing ?? [])
         .map((f) => `${userId}/${f.name}`)

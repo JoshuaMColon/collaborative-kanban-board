@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 
+// Email/password sessions and the anonymous guest session live in the
+// same place. I subscribe to auth changes so a refresh, a sign-out in
+// another tab, or "Try the demo" all update one `session`.
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,14 +55,19 @@ export function useAuth() {
       setError(signUpError.message);
       return false;
     }
+    // Confirm-email projects return a user and no session. I say so
+    // instead of treating that as a signed-in board. The profile row
+    // is created by the auth.users trigger, not here.
     if (data.user && !data.session) {
       setError("Check your email to confirm your account before signing in.");
     }
     return true;
   }
 
-  // Demo mode: a throwaway anonymous session that can only reach the seeded
-  // demo board (enforced by RLS on the is_anonymous JWT claim).
+  // Anonymous auth is the demo. The JWT carries is_anonymous, and RLS
+  // uses that claim to keep the guest on the seeded board. I rewrite
+  // the two failures people actually hit (provider off, per-IP limit)
+  // and leave anything else as Supabase sent it.
   async function signInAsGuest() {
     setError(null);
     const { error: anonError } = await supabase.auth.signInAnonymously();
@@ -83,6 +91,8 @@ export function useAuth() {
     await supabase.auth.signOut();
   }
 
+  // Set by signInAnonymously(). App uses this to pick the demo board
+  // and to hide account-only actions.
   const isAnonymous = Boolean(session?.user?.is_anonymous);
 
   return {
