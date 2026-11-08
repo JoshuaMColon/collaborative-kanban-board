@@ -1,3 +1,6 @@
+// Client-side only. Hidden cards stay in the database; I just don't
+// render them. Dragging is disabled while a filter is on, because the
+// visible order is not the stored order.
 import type { BoardCard } from "../types";
 
 export interface BoardFilter {

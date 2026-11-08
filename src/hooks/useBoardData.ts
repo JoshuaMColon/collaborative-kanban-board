@@ -3,6 +3,8 @@ import { mapDbCard, mapDbList, type DbCard, type DbList } from "../lib/mappers";
 import { supabase } from "../lib/supabase";
 import type { BoardCard, BoardList, CardPriority } from "../types";
 
+// Shared with Board.tsx. Appends and a full renumber step by this so
+// a later midpoint usually fits without rewriting the column.
 const ORDER_GAP = 1024;
 
 export type CardUpdates = Partial<
@@ -205,6 +207,8 @@ export function useBoardData(
     };
   }, [ready, boardId]);
 
+  // Optimistic. The drop already chose `order` (a midpoint, or the
+  // end of a list). I paint it, then write that one row.
   const moveCard = useCallback(
     async (cardId: string, listId: string, order: number) => {
       setCards((prev) =>
@@ -222,6 +226,7 @@ export function useBoardData(
         return;
       }
 
+      // RLS denial comes back as success with zero rows, not an error.
       if (!data || data.length === 0) {
         reportWriteError(
           "Couldn't move the card — you may not have permission to edit it.",
@@ -231,6 +236,10 @@ export function useBoardData(
     [reportWriteError],
   );
 
+  // The gap between two neighbours ran out. I rewrite every card in
+  // the list to (index + 1) * ORDER_GAP. These are separate updates;
+  // if one fails I resync the whole board instead of leaving a
+  // half-renumbered column on screen.
   const reorderList = useCallback(
     async (listId: string, orderedCardIds: string[]) => {
       const newOrders = new Map(
@@ -289,6 +298,9 @@ export function useBoardData(
       const trimmed = title.trim();
       if (!trimmed) return null;
 
+      // Append past the current max by a full gap. I wait for the
+      // insert instead of painting a placeholder: both the id and the
+      // MAN-### code come back from Postgres.
       const siblingsInList = cards.filter((c) => c.listId === listId);
       const maxOrder = siblingsInList.length
         ? Math.max(...siblingsInList.map((c) => c.order))
@@ -403,6 +415,7 @@ export function useBoardData(
       const trimmed = title.trim();
       if (!trimmed) return;
 
+      // Lists aren't drag-reordered, so a dense increment is enough.
       const maxOrder = lists.length
         ? Math.max(...lists.map((l) => l.order))
         : -1;

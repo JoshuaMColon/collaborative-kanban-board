@@ -1,8 +1,8 @@
 /**
- * Tiny shared flag so effects outside <DndContext> (e.g. click sparks) can
- * tell whether a pointer gesture was a @dnd-kit drag. The browser may fire a
- * `click` after the drop, so we keep reporting "dragging" for a short grace
- * period after the drag ends or is cancelled.
+ * Click sparks live outside DndContext, so they can't see a drag.
+ * I set this for the gesture and keep it up for 300ms after, because
+ * the browser still fires a click on drop and that would spark on a
+ * card I just moved.
  */
 const GRACE_MS = 300;
 let active = false;

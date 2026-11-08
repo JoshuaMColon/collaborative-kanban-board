@@ -35,6 +35,9 @@ export function ListColumn({
   newCardIds: ReadonlySet<string>;
   celebratingCardId: string | null;
 }) {
+  // The column is its own drop target, separate from the cards.
+  // Dropping on empty space (or an empty list) uses the list id;
+  // Board treats that as "put it at the end".
   const { setNodeRef, isOver } = useDroppable({
     id: list.id,
     data: { type: "list", listId: list.id },
@@ -117,6 +120,7 @@ export function ListColumn({
           isOver ? "bg-accent/[0.07] ring-2 ring-inset ring-accent/30" : ""
         }`}
       >
+        {/* Ids match the ones Board's drag handlers look up. */}
         <SortableContext
           items={cards.map((c) => c.id)}
           strategy={verticalListSortingStrategy}

@@ -40,9 +40,12 @@ import { LatticeLoader } from "./LatticeLoader";
 import { ListColumn } from "./ListColumn";
 import { PresenceBar } from "./PresenceBar";
 
-const ORDER_GAP = 1024; // spacing between integer order values
-// When two neighbours are this close (no whole number fits between them),
-// renumber the whole list instead of inserting another midpoint.
+// Same gap useBoardData uses when it appends a card or renumbers a list.
+// Wide on purpose: most drops only write one midpoint, not the column.
+const ORDER_GAP = 1024;
+// cards.order is an integer. A gap smaller than this has no whole number
+// strictly between the neighbours, so I renumber instead of collapsing
+// two cards onto the same position.
 const MIN_ORDER_GAP = 2;
 const ACTION_ERROR_TIMEOUT_MS = 7000;
 // How long a freshly added card keeps its soft highlight.
@@ -66,9 +69,9 @@ const DROP_ANIMATION: DropAnimation = {
   }),
 };
 
-// Prefers whatever the pointer is literally inside; if the pointer is
-// momentarily between droppables (e.g. crossing a gap), holds onto the last
-// known valid target instead of flickering to the wrong container.
+// Pointer-within first, then rectangle overlap. When the pointer is in
+// a gap between cards I keep the last good target so the highlight
+// doesn't flicker onto a neighbouring list.
 function useStableCollisionDetection() {
   const lastOverId = useRef<string | null>(null);
 
@@ -175,8 +178,9 @@ export function Board({
     return () => window.clearTimeout(timer);
   }, [actionError, dismissActionError]);
 
-  // Transient override applied only during an active drag, so a card can
-  // visually jump to another list before the drop is committed to Supabase.
+  // Which list the card is drawn in during a drag. I don't write to
+  // Supabase until drop. Remote updates keep flowing; this only
+  // overrides the active card's list for rendering.
   const [dragOverride, setDragOverride] = useState<{
     cardId: string;
     listId: string;
@@ -208,6 +212,7 @@ export function Board({
     return () => window.clearTimeout(timer);
   }, [celebratingCardId]);
 
+  // 6px before a drag starts, so a click still opens the card.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
@@ -341,8 +346,9 @@ export function Board({
     const overIsList = lists.some((l) => l.id === overId);
     const overCard = findCard(overId);
 
-    // Follow whatever list the pointer is over now, so a card can cross
-    // several lists (or come back) in one drag.
+    // Follow whatever list the pointer is over, so a card can cross
+    // several columns (or come back) in one drag. The override is
+    // what the drop handler trusts for the destination list.
     const targetListId = overIsList ? overId : overCard?.listId;
     if (!targetListId) return;
 
@@ -358,7 +364,8 @@ export function Board({
   async function handleDragEnd(event: DragEndEvent) {
     markDragEnd();
     const { active, over } = event;
-    // Read the override from this render before clearing it.
+    // Read the override from this render before clearing it. Clearing
+    // first would put the card back in its old list before I measure.
     const override = dragOverride;
     setActiveCard(null);
     setDragOverride(null);
@@ -407,8 +414,8 @@ export function Board({
       }
     }
 
-    // Same semantics @dnd-kit's sortable preview uses, so the card lands
-    // exactly where it was shown — in both drag directions.
+    // arrayMove matches the sortable preview, so the card lands where
+    // it was shown, in both drag directions.
     const orderedIds = arrayMove(renderedIds, activeIndex, overIndex);
     const newIndex = orderedIds.indexOf(activeId);
     const before = newIndex > 0 ? findCard(orderedIds[newIndex - 1]) : null;
@@ -417,13 +424,17 @@ export function Board({
         ? findCard(orderedIds[newIndex + 1])
         : null;
 
-    // cards.order is an INTEGER column, so a midpoint must be a whole number
-    // strictly between its neighbours; when there's no room, renumber.
+    // One integer strictly between the neighbours. I don't lock the
+    // list: two people dropping into the same gap can land on the same
+    // number, and the next renumber spreads them back out. Realtime
+    // then replaces each card with the row Postgres stored.
     if (before && after && after.order - before.order < MIN_ORDER_GAP) {
       await reorderList(targetListId, orderedIds);
       return;
     }
 
+    // Between two cards: the integer midpoint. At either end: a full
+    // gap past that neighbour. An empty list starts at 0.
     let newOrder: number;
     if (before && after) newOrder = Math.floor((before.order + after.order) / 2);
     else if (before) newOrder = before.order + ORDER_GAP;
