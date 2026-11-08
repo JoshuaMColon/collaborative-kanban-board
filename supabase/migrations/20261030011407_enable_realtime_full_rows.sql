@@ -1,5 +1,8 @@
--- Realtime: publish board tables and send full old rows on UPDATE/DELETE,
--- so delete events carry id/board_id/list_id for every subscriber.
+-- Publish the board tables, and send the full old row on UPDATE and
+-- DELETE. The client filters cards and lists by board_id and, on a
+-- delete, needs at least the id. REPLICA IDENTITY FULL is what puts
+-- the old columns in the realtime payload. Default identity would
+-- only send the primary key.
 
 alter table public.boards replica identity full;
 alter table public.lists  replica identity full;

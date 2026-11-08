@@ -183,7 +183,10 @@ export function useBoardMeta({
     return () => window.clearTimeout(timer);
   }, [ready, profiles, userId]);
 
-  // Realtime for comments, labels, label links, members and profile edits.
+  // Separate channel from cards and lists so a comment storm doesn't
+  // share a subscription with ordering. Deletes are unfiltered, same
+  // reason as useBoardData: the old row may not carry board_id.
+  // Profile updates aren't board-scoped; I ignore ids I haven't loaded.
   useEffect(() => {
     if (!ready) return;
     const filter = `board_id=eq.${boardId}`;
