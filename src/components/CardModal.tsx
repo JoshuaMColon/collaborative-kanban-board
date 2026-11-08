@@ -87,8 +87,9 @@ export function CardModal({
     setSaving(true);
     await onSave({
       title: trimmedTitle,
-      // Empty values are passed as undefined; useBoardData sends them to
-      // Supabase as explicit nulls so clearing a field actually persists.
+      // Empty fields go out as undefined. useBoardData turns those into
+      // explicit nulls, because supabase-js would otherwise omit them
+      // and leave the old value stored.
       description: description.trim() || undefined,
       priority,
       assigneeId: assigneeId || undefined,
@@ -517,7 +518,12 @@ function CommentThread({
         <ol className="flex flex-col gap-3">
           {[...comments].reverse().map((comment) => {
             const author = collaboratorFor(comment.authorId);
+            // Edit and delete only on my rows. RLS enforces the same
+            // rule; this just keeps the controls off everyone else's.
             const mine = comment.authorId === currentUserId;
+            // updated_at is stamped by a trigger, so a real edit is
+            // more than a second after created_at. The insert itself
+            // shouldn't show "edited".
             const edited =
               new Date(comment.updatedAt).getTime() - new Date(comment.createdAt).getTime() > 1000;
             return (
